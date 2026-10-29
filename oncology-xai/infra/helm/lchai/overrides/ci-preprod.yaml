@@ -1,0 +1,51 @@
+# Render de pre-prod para CI (ci-chart-scan: helm template + escaneo de imagenes y manifiestos).
+# Refleja fleet/stacks/txt/lchai (values-stack.yaml + envs/preprod/values.yaml). Sin secretos:
+# lchai-secrets y lchai-s3-config se crean fuera del chart (secrets.existing=true).
+domain: lchai-solca-pre.ai-dev.i.telconet.net
+environment: production
+image:
+  registry: registry.gitlab.telconet.ec
+  prefix: docker/images/txt-solca-lchai
+  separator: "-"
+  pullPolicy: IfNotPresent
+  tag: "0.0.0"
+storage:
+  className: exascaler-lustre-class
+ingress:
+  provider: none
+  tls:
+    enabled: false
+secrets:
+  existing: true
+probes:
+  type: tcpSocket
+podSecurity:
+  hardened: true
+localDeps:
+  enabled: true
+  postgres:
+    storage: 20Gi
+    fixPermissions: true
+  s3:
+    storage: 100Gi
+    host: lchai-solca-s3-pre.ai-dev.i.telconet.net
+postgres:
+  host: postgres
+  sslMode: disable
+redis:
+  host: redis
+dbSchema:
+  enabled: true
+keycloak:
+  importRealm: true
+auth:
+  jwtAudience: oncology-api
+inferenceWorker:
+  enabled: false
+remoteWorker:
+  enabled: false
+nodeSelector:
+  general: null
+  gpu: null
+networkPolicy:
+  enabled: false
