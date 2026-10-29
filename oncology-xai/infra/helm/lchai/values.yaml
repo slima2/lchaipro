@@ -98,6 +98,7 @@ fuseki:
   storage: 10Gi
 
 inferenceWorker:
+  enabled: true           # false = sin worker en el cluster (worker remoto con GPU: remoteWorker e infra/worker-remoto)
   updateStrategy: ""      # "" = RollingUpdate (AWS). Recreate si hay una sola GPU (Telconet, minikube)
   gpu: true
   modelBackend: local
@@ -129,6 +130,15 @@ services:
     replicas: 1
   activeLearning:
     replicas: 1
+
+# Worker de IA remoto (p. ej. con GPU en AWS) conectado a este lchai. Ver infra/worker-remoto/README.md.
+# Expone RabbitMQ, Redis y PostgreSQL (los de localDeps) SOLO a las IP de allowedCidrs, con el balanceador
+# (loadBalancerSourceRanges) y con NetworkPolicy. Pensado para ir por una VPN privada, no por internet abierto.
+remoteWorker:
+  enabled: false
+  serviceType: LoadBalancer   # LoadBalancer | NodePort
+  allowedCidrs: []            # obligatorio: IP del worker remoto, p. ej. ["10.20.0.15/32"]
+  annotations: {}             # p. ej. balanceador interno del proveedor
 
 # PostgreSQL, Redis y almacenamiento S3 (SeaweedFS) dentro del cluster (minikube u on-premise sin servicios administrados)
 localDeps:

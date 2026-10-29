@@ -35,6 +35,7 @@ data:
                 print(f"Downloading {key}...", flush=True)
                 s3.download_file(bucket, key, f"{dest}/{name}")
     print("Done", flush=True)
+{{- if .Values.inferenceWorker.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -130,4 +131,5 @@ spec:
         - name: scripts
           configMap:
             name: lchai-model-download
+{{- end }}
 {{- end }}

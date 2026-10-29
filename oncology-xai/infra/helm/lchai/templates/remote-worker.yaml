@@ -1,0 +1,54 @@
+{{- /*
+Acceso para un worker de IA remoto (infra/worker-remoto): RabbitMQ (tareas), Redis (estado de las tareas)
+y PostgreSQL (resultados), restringido a remoteWorker.allowedCidrs. Las láminas y resultados van por S3 (HTTPS).
+*/ -}}
+{{- if .Values.remoteWorker.enabled }}
+{{- if not .Values.remoteWorker.allowedCidrs }}{{ fail "remoteWorker.allowedCidrs es obligatorio: la IP del worker remoto (sin eso los servicios quedarían abiertos)" }}{{ end }}
+{{- $cidrs := .Values.remoteWorker.allowedCidrs }}
+{{- $svcs := list (dict "name" "rabbitmq" "port" 5672) }}
+{{- if .Values.localDeps.enabled }}
+{{- $svcs = append $svcs (dict "name" "redis" "port" 6379) }}
+{{- $svcs = append $svcs (dict "name" "postgres" "port" 5432) }}
+{{- end }}
+{{- range $svcs }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .name }}-remoto
+  {{- with $.Values.remoteWorker.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $.Values.remoteWorker.serviceType }}
+  # Conserva la IP de origen para que la NetworkPolicy pueda filtrar por ella
+  externalTrafficPolicy: Local
+  {{- if eq $.Values.remoteWorker.serviceType "LoadBalancer" }}
+  loadBalancerSourceRanges:
+    {{- toYaml $cidrs | nindent 4 }}
+  {{- end }}
+  selector:
+    app: {{ .name }}
+  ports:
+    - port: {{ .port }}
+      targetPort: {{ .port }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# Solo las IP del worker remoto llegan a la cola, al caché y a la base de datos
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-remote-worker
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [{{ range $i, $s := $svcs }}{{ if $i }}, {{ end }}{{ $s.name }}{{ end }}] }
+  ingress:
+    - from:
+        {{- range $cidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+{{- end }}
+{{- end }}

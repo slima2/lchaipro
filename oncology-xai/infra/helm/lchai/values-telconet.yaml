@@ -76,6 +76,12 @@ auth:
 inferenceWorker:
   gpu: true                            # requiere el NVIDIA device plugin (recurso nvidia.com/gpu)
   updateStrategy: Recreate             # con una sola GPU, RollingUpdate deja el pod nuevo en Pending
+  # Sin GPU en Telconet: worker con GPU en AWS por VPN (infra/worker-remoto/README.md):
+  # enabled: false
+# remoteWorker:
+#   enabled: true
+#   serviceType: LoadBalancer
+#   allowedCidrs: ["<ip-privada-del-worker>/32"]
 nodeSelector:
   general: null                        # TODO: etiquetas de nodos si aplica
   gpu: null                            # TODO: p. ej. { nvidia.com/gpu.present: "true" }

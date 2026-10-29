@@ -1,0 +1,11 @@
+# Agrega la GPU NVIDIA al worker. Requiere el driver de NVIDIA y nvidia-container-toolkit en la máquina.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

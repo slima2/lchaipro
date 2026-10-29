@@ -21,7 +21,7 @@ Probado de punta a punta en minikube el 28-oct-2026 con una instalación desde c
 ## Requisitos
 
 - Kubernetes 1.27+, Helm 3, un ingress controller (o un proxy externo, ver opción d) y una StorageClass.
-- GPU: NVIDIA device plugin. Sin GPU: `inferenceWorker.gpu: false` (unas 4 veces más lento).
+- GPU: NVIDIA device plugin. Sin GPU: `inferenceWorker.gpu: false` (unas 4 veces más lento), o un worker con GPU fuera del cluster conectado por VPN: [infra/worker-remoto/README.md](../../worker-remoto/README.md).
 - Recursos (requests): unos 4 vCPU y 5 GB de RAM para todo menos el worker, que pide 2 vCPU, 4 GB y una GPU. Recomendado: 8 vCPU y 16 GB en total.
 - **Dos nombres DNS** apuntando al ingress si se usa `localDeps`: `<domain>` y `s3.<domain>`.
   El navegador abre las láminas y sube las grandes directo a S3 con URL firmadas.

@@ -1,0 +1,54 @@
+# Worker de IA de lchai FUERA del cluster (p. ej. una EC2 con GPU en AWS) conectado al lchai de Telconet.
+# Guía: README.md de esta carpeta.
+#   CPU:  docker compose up -d
+#   GPU:  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Necesita: .env (WORKER_IMAGE) y worker.env (conexiones y claves, lo genera generar-worker-env.sh).
+name: lchai-worker
+
+services:
+  # Descarga los modelos (~330 MB + checkpoints) del bucket de modelos. Con `sync` solo baja lo que falta.
+  # En una EC2 usa el rol IAM de la instancia; fuera de AWS, las variables AWS_* del entorno.
+  modelos:
+    image: amazon/aws-cli:2.17.0
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        B="s3://$${MODELS_BUCKET}"
+        aws s3 sync "$$B/backbones/" /data/models/ --only-show-errors --exclude "*" \
+          --include "ctranspath.pth" --include "best_fuzzyarcloss_v2.pth"
+        aws s3 sync "$$B/checkpoints/" /data/checkpoints/ --only-show-errors --exclude "*" --include "*.pth" \
+          --exclude "*_backup*"
+        chown -R 10001:10001 /data
+        echo "modelos listos: $$(find /data -name '*.pth' | wc -l) archivos"
+    environment:
+      MODELS_BUCKET: ${MODELS_BUCKET:-lchai-prod-models}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    volumes:
+      - modelos:/data
+
+  worker:
+    image: ${WORKER_IMAGE:?falta WORKER_IMAGE en .env (imagen inference-service)}
+    depends_on:
+      modelos:
+        condition: service_completed_successfully
+    command: ["celery", "-A", "app.celery_app:celery", "worker", "--loglevel=info", "--concurrency=1"]
+    env_file: worker.env
+    environment:
+      CTRANSPATH_CHECKPOINT: /data/models/ctranspath.pth
+      FUZZYARC_CHECKPOINT: /data/models/best_fuzzyarcloss_v2.pth
+      V2_CHECKPOINT_DIR: /data/checkpoints
+    volumes:
+      - modelos:/data:ro
+    restart: unless-stopped
+    # Igual que en el cluster: sin root, sin escalada de privilegios y sin capacidades extra
+    user: "10001"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    shm_size: 2gb
+
+volumes:
+  modelos:
