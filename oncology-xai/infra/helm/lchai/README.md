@@ -31,10 +31,14 @@ Probado de punta a punta en minikube el 28-oct-2026 con una instalación desde c
 ```bash
 cd oncology-xai
 docker login <registro>
-infra/build-images.sh <registro>/lchai sec-20261028 --push
+infra/build-images.sh <registro>/lchai sec-20261029 --push
 ```
 
-Compila los 9 servicios y la webapp portable (`portable-20261028`). En `values-telconet.yaml` van `image.registry`, `image.prefix` y `image.tag`.
+Compila los 9 servicios y la webapp portable (`portable-20261029`). En `values-telconet.yaml` van `image.registry`, `image.prefix` y `image.tag`.
+
+Las imágenes corren **sin root**: los servicios con el usuario `app` (uid 10001) y la webapp con `nginx` (uid 101). El chart lo exige con `podSecurity.hardened: true`.
+
+**Imágenes base:** los Dockerfile parten de `python:3.12.15-slim-trixie`, `node:22.23.4-alpine` y `nginx:1.31.8-alpine` de Docker Hub. Si la política de Telconet exige un registro permitido (Hadolint DL3026 en el escaneo de `code-lint`), hay que usar sus copias en Harbor y cambiar la línea `FROM` de cada Dockerfile.
 
 **Registro privado:** crear el secret y asignarlo a la cuenta de servicio del namespace:
 

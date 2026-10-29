@@ -3,11 +3,10 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
 from oncology_common.database import Base
 from oncology_common.models.entities import CaseStatus
+from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class PatientDB(Base):

@@ -20,7 +20,6 @@ Outputs (DERCAS 10.3):
 from __future__ import annotations
 
 import io
-import json
 import logging
 import math
 import time
@@ -174,7 +173,6 @@ def _load_real_pipeline(checkpoint_path: str, device: str = "cpu") -> dict[str, 
     if checkpoint_path in _MODEL_CACHE:
         return _MODEL_CACHE[checkpoint_path]
 
-    import torch
 
     from app.ml.models.ctranspath_backbone import CTransPathPipeline
 
@@ -371,9 +369,9 @@ def _generate_shap_real(profile: dict[str, float], gene: str, model_dir: str) ->
     Adapted from thesis: SLIMA_histology_mutation_xgboost_rev3.
     """
     try:
-        import xgboost as xgb
-        import shap
         import matplotlib
+        import shap
+        import xgboost as xgb
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -446,9 +444,10 @@ def _convert_to_pyramidal_tiff(input_path: str, source_format: str = "tif") -> s
 
     Returns path to the new pyramidal file. The caller owns the temp file.
     """
-    import pyvips
-    import tempfile
     import os
+    import tempfile
+
+    import pyvips
 
     logger.info("Converting %s to pyramidal TIFF: %s (%.1f MB)",
                 source_format.upper(), input_path, os.path.getsize(input_path) / 1e6)
@@ -575,6 +574,7 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
         try:
             import os
             import tempfile
+
             import openslide
             suffix = {"svs": ".svs", "bif": ".bif"}.get(fmt, ".tif")
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
@@ -669,7 +669,7 @@ def _cleanup_wsi():
         try:
             slide.close()
         except Exception:
-            pass
+            logger.debug("could not close slide", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
         try:
             import os
             os.unlink(path)
@@ -703,7 +703,6 @@ def _build_tissue_mask(slide, level: int, tile_size: int, ds: int = 32) -> np.nd
         gray = np.mean(arr, axis=2)
 
         # Otsu threshold: separate tissue (dark/colored) from glass (white)
-        from PIL import ImageFilter as _IF  # noqa: local import OK
         sorted_px = np.sort(gray.ravel())
         n = len(sorted_px)
         best_t, best_var = 0, 0
@@ -1115,8 +1114,8 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
 
     # ── v2: Pathway A — Pattern-Informed ABMIL ──
     try:
-        from app.ml.inference.abmil_inference import run_abmil_inference
         from app.ml.checkpoints.loader import CheckpointLoader
+        from app.ml.inference.abmil_inference import run_abmil_inference
 
         loader = CheckpointLoader(config.v2_checkpoint_dir, config.device)
         abmil_output = run_abmil_inference(
@@ -1194,8 +1193,8 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
     # ── v2: Pathway B — Fuzzy Choquet MIL (optional) ──
     if config.use_choquet:
         try:
-            from app.ml.inference.choquet_inference import run_choquet_inference
             from app.ml.checkpoints.loader import CheckpointLoader
+            from app.ml.inference.choquet_inference import run_choquet_inference
 
             loader = CheckpointLoader(config.v2_checkpoint_dir, config.device)
             choquet_output = run_choquet_inference(
@@ -1217,8 +1216,11 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
 
     # ── v2: Ablation comparison (proposed vs emb-only vs pat-only) ──
     try:
-        from app.ml.inference.abmil_inference import run_ablation_comparison, run_permutation_importance
         from app.ml.checkpoints.loader import CheckpointLoader as CL2
+        from app.ml.inference.abmil_inference import (
+            run_ablation_comparison,
+            run_permutation_importance,
+        )
 
         loader2 = CL2(config.v2_checkpoint_dir, config.device)
         result.ablation_results = run_ablation_comparison(
@@ -1236,8 +1238,8 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
     # ── v2: SHAP Decomposition (DeepSHAP on ABMIL) ──
     if config.shap_decomposition_enabled:
         try:
-            from app.ml.inference.shap_decompose import run_shap_decomposition
             from app.ml.checkpoints.loader import CheckpointLoader
+            from app.ml.inference.shap_decompose import run_shap_decomposition
 
             loader = CheckpointLoader(config.v2_checkpoint_dir, config.device)
             concat = np.concatenate([result.tile_embeddings, tile_probs_matrix], axis=1)
@@ -1336,8 +1338,8 @@ def _build_attention_overlay(
     (instead of white) so the ROI outlines remain visible on the white glass
     background of H&E slides.
     """
-    from PIL import ImageFilter
     import cv2
+    from PIL import ImageFilter
 
     w, h = img.size
     base_arr = np.array(img.convert("RGB")).astype(np.float32)
@@ -1451,8 +1453,8 @@ def _build_combined_overlay(
     (instead of white) so the ROI outlines stay visible on the white glass
     background of H&E slides.
     """
-    from PIL import ImageFilter, ImageDraw
     import cv2
+    from PIL import ImageFilter
 
     w, h = img.size
 

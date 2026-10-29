@@ -28,6 +28,7 @@ spec:
       labels:
         app: postgres
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: postgres
@@ -99,6 +100,7 @@ spec:
       labels:
         app: redis
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: redis
@@ -154,6 +156,7 @@ spec:
       labels:
         app: s3
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: seaweedfs
@@ -234,6 +237,7 @@ spec:
       labels:
         app: s3-buckets
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       restartPolicy: OnFailure
       containers:
         - name: aws

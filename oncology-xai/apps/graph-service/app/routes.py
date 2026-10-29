@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from sqlalchemy import text
 
 from app.config import settings
 from app.database import get_db
@@ -98,8 +95,10 @@ async def get_gene_associations(db: AsyncSession = Depends(get_db)):
     all LLM prompts use the latest KG state as their ground truth.
     """
     from app.ontology_loader import (
-        CURATED_EDGES, CURATED_NODES,
-        GENE_NAME_TO_IRI, PATTERN_NAME_TO_IRI,
+        CURATED_EDGES,
+        CURATED_NODES,
+        GENE_NAME_TO_IRI,
+        PATTERN_NAME_TO_IRI,
     )
 
     iri_to_name: dict[str, str] = {}

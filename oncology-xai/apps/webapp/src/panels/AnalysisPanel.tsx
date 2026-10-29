@@ -444,7 +444,7 @@ function renderExplanationWithCitations(
 
   const pmidByNum = new Map(refList.map((r) => [r.num, r]));
 
-  const parts = text.split(/(\[\d+(?:[,\s]*\d+)*\])/g);
+  const parts = text.split(/(\[\d+(?:[,\s]+\d+)*\])/g);
 
   return parts.map((part, i) => {
     const match = part.match(/^\[([\d,\s]+)\]$/);
@@ -504,7 +504,7 @@ function AutoExplanation({
 
   const abl = geneResult?.ablation;
   const perm = geneResult?.permutation;
-  const citationIds = kgInfo.citations.map((c) => c.pmid).sort().join(',');
+  const citationIds = kgInfo.citations.map((c) => c.pmid).sort((a, b) => String(a).localeCompare(String(b))).join(',');
   const cacheKey = `analysis_${gene}_${abl?.p_proposed}_${abl?.p_emb_only}_${language}_${citationIds}`;
 
   const { refMap, refList } = buildNumberedRefs(kgInfo.citations);
@@ -1416,7 +1416,7 @@ export default function AnalysisPanel({
       try {
         patientId = (await createPatient({ external_id: uniqueId })).data.patient_id;
       } catch {
-        patientId = (await createPatient({ external_id: `${uniqueId}_${Math.random().toString(36).slice(2, 6)}` })).data.patient_id;
+        patientId = (await createPatient({ external_id: `${uniqueId}_${crypto.randomUUID().slice(0, 4)}` })).data.patient_id;
       }
       const newCaseId = (await createCase({ patient_id: patientId })).data.case_id;
       setUploadProgress(0);

@@ -13,7 +13,7 @@ REGION=us-east-1
 REGISTRY=632100838024.dkr.ecr.us-east-1.amazonaws.com
 PUBLIC_URL=http://lchai.localhost:8080
 
-TAG=sec-20261028   # etiqueta de values-minikube.yaml
+TAG=sec-20261029   # etiqueta de values-minikube.yaml
 
 log() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
 

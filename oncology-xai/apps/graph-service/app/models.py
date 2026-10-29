@@ -3,10 +3,9 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
 from oncology_common.database import Base
+from sqlalchemy import JSON, DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class CaseGraphSnapshotDB(Base):

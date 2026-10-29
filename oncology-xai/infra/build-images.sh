@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Compila las 10 imágenes de lchai desde el código fuente (9 servicios Python + webapp portable).
 # Uso:  infra/build-images.sh <registro>/<prefijo> <etiqueta> [--push] [--minikube]
-#   ej: infra/build-images.sh harbor.telconet.ec/lchai sec-20261028 --push
-#       infra/build-images.sh 632100838024.dkr.ecr.us-east-1.amazonaws.com/lchai-prod sec-20261028 --minikube
+#   ej: infra/build-images.sh harbor.telconet.ec/lchai sec-20261029 --push
+#       infra/build-images.sh 632100838024.dkr.ecr.us-east-1.amazonaws.com/lchai-prod sec-20261029 --minikube
 # La webapp se compila SIN URL fija (usa el dominio desde el que se abre) y lleva la etiqueta portable-<fecha>.
 set -euo pipefail
 

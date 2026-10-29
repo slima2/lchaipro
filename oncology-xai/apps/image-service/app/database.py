@@ -1,6 +1,7 @@
 """Database setup for image-service."""
 
-from oncology_common.database import Base, create_db_engine, create_session_factory
+from oncology_common.database import create_db_engine, create_session_factory
+
 from app.config import settings
 
 engine = create_db_engine(settings.postgres_dsn)

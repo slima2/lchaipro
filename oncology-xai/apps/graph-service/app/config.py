@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     log_level: str = "INFO"
 
-    postgres_dsn: str = "postgresql+asyncpg://oncology:oncology_secret@postgres:5432/oncology_xai"
-    rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
+    postgres_dsn: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    rabbitmq_url: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
     fuseki_url: str = "http://fuseki:3030"
     fuseki_dataset: str = "oncology"
     otel_exporter_otlp_endpoint: str | None = None

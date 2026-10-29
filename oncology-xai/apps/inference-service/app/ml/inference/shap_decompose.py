@@ -53,7 +53,6 @@ def run_shap_decomposition(
         device: torch device
         background_size: number of background samples for DeepSHAP
     """
-    import torch
 
     result = SHAPDecomposition(gene=gene)
 

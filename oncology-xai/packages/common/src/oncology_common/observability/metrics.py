@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -9,11 +10,13 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
 
-def setup_metrics(app: "FastAPI") -> None:
+def setup_metrics(app: FastAPI) -> None:
     """Mount /metrics endpoint."""
     try:
         from prometheus_client import make_asgi_app
@@ -21,7 +24,7 @@ def setup_metrics(app: "FastAPI") -> None:
         metrics_app = make_asgi_app()
         app.mount("/metrics", metrics_app)
     except Exception:
-        pass
+        logger.debug("could not mount /metrics", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -47,5 +50,5 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 status=response.status_code,
             ).observe(elapsed)
         except Exception:
-            pass
+            logger.debug("could not record request metrics", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
         return response

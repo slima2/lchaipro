@@ -58,6 +58,7 @@ spec:
       labels:
         app: inference-worker
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" (ternary "gpu" "general" .Values.inferenceWorker.gpu)) | nindent 6 }}
       {{- if .Values.inferenceWorker.gpu }}
       tolerations:
@@ -69,6 +70,7 @@ spec:
         - name: download-models
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with include "lchai.containerHardening" $ }}{{ . | nindent 10 }}{{- end }}
           command: ["python3", "/scripts/download_models.py"]
           env:
             - name: MODELS_BUCKET
@@ -91,6 +93,7 @@ spec:
         - name: inference-worker
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with include "lchai.containerHardening" $ }}{{ . | nindent 10 }}{{- end }}
           command: ["celery", "-A", "app.celery_app:celery", "worker", "--loglevel=info", "--concurrency=1"]
           envFrom:
             - configMapRef:

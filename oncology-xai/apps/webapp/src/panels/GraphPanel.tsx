@@ -43,7 +43,7 @@ const NODE_COLORS: Record<string, string> = {
 
 /** Map graph node label/id to canonical pattern slug. */
 function patternSlugFromGraphLabel(label: string): string | null {
-  const noPct = label.replace(/\s*\([^)]*\)\s*$/u, '').trim();
+  const noPct = label.trim().replace(/\([^)]*\)$/u, '').trim();
   const s = noPct.toLowerCase().replace(/\s+pattern$/iu, '').trim();
   return s || null;
 }

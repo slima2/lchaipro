@@ -3,10 +3,9 @@
 import uuid
 from datetime import datetime
 
+from oncology_common.database import Base
 from sqlalchemy import BigInteger, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
-
-from oncology_common.database import Base
 
 
 class ImageDB(Base):

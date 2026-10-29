@@ -14,6 +14,7 @@ spec:
       labels:
         app: fuseki
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: fuseki
@@ -36,6 +37,7 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
+              ephemeral-storage: 1Gi   # disco temporal acotado (SonarQube S6870); los datos van al volumen
   volumeClaimTemplates:
     - metadata:
         name: data

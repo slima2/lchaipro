@@ -4,12 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-
 from oncology_common.middleware.correlation import CorrelationMiddleware
 from oncology_common.middleware.logging import LoggingMiddleware, configure_logging
-from oncology_common.observability.tracing import setup_tracing, instrument_fastapi
-from oncology_common.observability.metrics import setup_metrics, MetricsMiddleware
-from oncology_common.models.base import HealthResponse, ErrorResponse
+from oncology_common.models.base import ErrorResponse, HealthResponse
+from oncology_common.observability.metrics import MetricsMiddleware, setup_metrics
+from oncology_common.observability.tracing import instrument_fastapi, setup_tracing
 
 from app.config import settings
 from app.routes import router
@@ -17,7 +16,8 @@ from app.routes import router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import threading, logging as _log
+    import logging as _log
+    import threading
     configure_logging(settings.service_name, settings.log_level)
     if settings.otel_exporter_otlp_endpoint:
         setup_tracing(settings.service_name, settings.otel_exporter_otlp_endpoint)

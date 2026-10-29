@@ -11,7 +11,15 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import PatientDB, CaseDB
+from app.models import CaseDB, PatientDB
+
+# Borrado de tablas hijas de un resultado: consultas fijas, sin construir SQL con texto (Bandit S608)
+_DELETE_BY_RESULT_BUNDLE = (
+    ("xai_artifacts", text("DELETE FROM xai_artifacts WHERE result_bundle_id = :rb")),
+    ("pattern_results", text("DELETE FROM pattern_results WHERE result_bundle_id = :rb")),
+    ("genetic_results", text("DELETE FROM genetic_results WHERE result_bundle_id = :rb")),
+    ("morphologic_profiles", text("DELETE FROM morphologic_profiles WHERE result_bundle_id = :rb")),
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +72,8 @@ async def _cascade_delete_case(db: AsyncSession, case_id: str) -> dict[str, int]
     rb_rows = await db.execute(text("SELECT id FROM result_bundles WHERE case_id = :c"), {"c": case_id})
     rb_ids = [r[0] for r in rb_rows.fetchall()]
     for rb in rb_ids:
-        for table in ("xai_artifacts", "pattern_results", "genetic_results", "morphologic_profiles"):
-            res = await db.execute(text(f"DELETE FROM {table} WHERE result_bundle_id = :rb"), {"rb": rb})
+        for table, stmt in _DELETE_BY_RESULT_BUNDLE:
+            res = await db.execute(stmt, {"rb": rb})
             counts[table] = counts.get(table, 0) + (res.rowcount or 0)
 
     res = await db.execute(text("DELETE FROM result_bundles WHERE case_id = :c"), {"c": case_id})

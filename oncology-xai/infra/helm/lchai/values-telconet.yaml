@@ -8,14 +8,14 @@ publicUrl: ""                          # vacío = https://<domain>. Con puerto: 
 environment: production
 
 # ── 2. Imágenes ───────────────────────────────────────────────────────────────
-# Compilar y subir con: infra/build-images.sh <registro>/<prefijo> sec-20261028 --push
+# Compilar y subir con: infra/build-images.sh <registro>/<prefijo> sec-20261029 --push
 image:
   registry: TODO.registry.telconet     # TODO: Harbor o registro de Telconet
   prefix: lchai
-  tag: sec-20261028                    # imágenes parchadas (rama telconet-portable)
+  tag: sec-20261029                    # imágenes parchadas (rama telconet-portable)
   pullPolicy: IfNotPresent
   tags:
-    webapp: portable-20261028          # sin URL fija: sirve para cualquier dominio
+    webapp: portable-20261029          # sin URL fija: sirve para cualquier dominio
 # Registro privado: ver README (sección "Registro privado")
 
 # ── 3. Entrada (proxy) ────────────────────────────────────────────────────────
@@ -84,3 +84,6 @@ nodeSelector:
 networkPolicy:
   enabled: true
   ingressNamespace: ingress-nginx      # TODO: namespace del ingress controller (traefik: kube-system o traefik)
+
+podSecurity:
+  hardened: true   # sin token de Kubernetes, sin root y sin escalada de privilegios

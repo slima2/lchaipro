@@ -28,11 +28,13 @@ spec:
       labels:
         app: {{ $svc.name }}
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: {{ $svc.name }}
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" $svc.name) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- with include "lchai.containerHardening" $ }}{{ . | nindent 10 }}{{- end }}
           ports:
             - containerPort: {{ $svc.port }}
           envFrom:

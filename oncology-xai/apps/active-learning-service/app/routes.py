@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
 
 from app.config import settings
 from app.database import get_db, get_sync_db
-from app.models import PatternCorrectionDB, ModelVersionDB
+from app.models import ModelVersionDB, PatternCorrectionDB
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,6 @@ async def _run_correction_pipeline(
             try:
                 storage.download_bytes(current_pth_uri)
             except Exception:
-                import io
                 pth_bytes = _read_pth_from_inference_volume()
                 if pth_bytes:
                     storage.upload_bytes(current_pth_uri, pth_bytes, "application/octet-stream")
@@ -259,8 +258,8 @@ async def _run_correction_pipeline(
 
         # Emit audit event for correction tracking
         try:
-            from event_contracts.publisher import EventPublisher
             from event_contracts.envelope import EventEnvelope
+            from event_contracts.publisher import EventPublisher
             publisher = EventPublisher(settings.rabbitmq_url)
             corrected_by = corrections[0].get("corrected_by", "unknown") if corrections else "unknown"
             envelope = EventEnvelope(
@@ -283,8 +282,9 @@ async def _run_correction_pipeline(
 
         job.update(progress=0.6, stage="Triggering slide re-analysis...")
 
-        from app.reprocess import trigger_reanalysis
         import asyncio
+
+        from app.reprocess import trigger_reanalysis
         loop = asyncio.new_event_loop()
         reanalysis_result = loop.run_until_complete(trigger_reanalysis(image_id, case_id))
         loop.close()
@@ -324,5 +324,5 @@ def _read_pth_from_inference_volume() -> bytes | None:
         if resp.status_code == 200:
             pass
     except Exception:
-        pass
+        logger.debug("checkpoint status check failed", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
     return None

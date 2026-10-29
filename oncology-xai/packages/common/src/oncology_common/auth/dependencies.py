@@ -1,7 +1,8 @@
 """FastAPI auth dependencies — JWT + RBAC."""
 
 import os
-from typing import Annotated, Callable
+from collections.abc import Callable
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

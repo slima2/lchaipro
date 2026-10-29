@@ -9,7 +9,6 @@ from pydantic import Field
 
 from oncology_common.models.base import BaseModel
 
-
 # ── Enums ──────────────────────────────────────────────────────────────
 
 class CaseStatus(str, Enum):

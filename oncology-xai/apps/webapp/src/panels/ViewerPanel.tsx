@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import type React from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, getResultBundle, getArtifacts, getArtifactUrl, getImages, getJob, submitPatternCorrections, getActiveLearningJob } from '../api';
 import { patternColor, filterAllowedPatternResults, predominantPatternForDisplay, PATTERN_COLORS, type AnorakPattern } from '../patternConstants';

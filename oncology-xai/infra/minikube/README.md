@@ -14,7 +14,7 @@ Levanta lchai completo en minikube para probar el chart fuera de AWS. Es el mism
 | Discos | `gp2` | StorageClass por defecto (`storage.className: ""`) |
 | Login | Realm en RDS | Realm importado de `infra/keycloak/realm-export.json` con usuarios de prueba |
 | GPU | Tesla T4 | CPU (`inferenceWorker.gpu: false`) |
-| Imágenes | ECR de producción | compiladas desde el código dentro de minikube (`sec-20261028`, webapp `portable-20261028`) |
+| Imágenes | ECR de producción | compiladas desde el código dentro de minikube (`sec-20261029`, webapp `portable-20261029`) |
 
 ## Requisitos
 

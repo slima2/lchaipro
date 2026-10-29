@@ -88,3 +88,24 @@ Checksum de lchai-config y lchai-secrets. Va como anotación del pod: si cambia 
 {{- define "lchai.configChecksum" -}}
 checksum/config: {{ printf "%s%s" (include (print .Template.BasePath "/configmap.yaml") .) (include (print .Template.BasePath "/secret.yaml") .) | sha256sum | quote }}
 {{- end -}}
+
+{{/*
+Pod: sin token de Kubernetes montado, en todos los entornos (SonarQube S6865). Ningún servicio de lchai usa la
+API de Kubernetes y el chart no usa roles IAM por cuenta de servicio (IRSA), así que en AWS no cambia nada.
+*/}}
+{{- define "lchai.podHardening" -}}
+automountServiceAccountToken: false
+{{- end -}}
+
+{{/* Contenedores de las imágenes propias de lchai (corren sin root desde sec-20261029) */}}
+{{- define "lchai.containerHardening" -}}
+{{- if .Values.podSecurity.hardened }}
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+{{- end }}
+{{- end -}}

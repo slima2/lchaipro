@@ -12,9 +12,13 @@ from datetime import datetime
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+
+from oncology_common.safe_torch import allow_numpy_globals
+
+allow_numpy_globals()  # torch.load(weights_only=True) con los tipos de numpy de los checkpoints
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,7 @@ def run_delta_training(
         n_tiles = tile_embeddings.shape[0]
         logger.info("Loaded tile data: %d tiles, embeddings=%s", n_tiles, tile_embeddings.shape)
 
-        ck = torch.load(io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=False)
+        ck = torch.load(io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=True)
         head_weight = ck.get("loss_fn", {}).get("head.weight")
         if head_weight is None:
             head_weight = ck.get("loss_fn", {}).get("weight")

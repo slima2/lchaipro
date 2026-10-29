@@ -15,12 +15,12 @@ def setup_tracing(service_name: str, otlp_endpoint: str) -> None:
     """Configure OTel TracerProvider with OTLP exporter."""
     try:
         from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
             OTLPSpanExporter,
         )
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
@@ -32,7 +32,7 @@ def setup_tracing(service_name: str, otlp_endpoint: str) -> None:
         logger.warning("OTel tracing setup failed: %s", exc)
 
 
-def instrument_fastapi(app: "FastAPI") -> None:
+def instrument_fastapi(app: FastAPI) -> None:
     """Instrument FastAPI with OTel."""
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor

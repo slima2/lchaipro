@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
-from app.ml.checkpoints.loader import CheckpointLoader, GENES_V2
+from app.ml.checkpoints.loader import GENES_V2, CheckpointLoader
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,12 @@ def run_ablation_comparison(
     genes: list[str] | None = None,
 ) -> list[AblationEntry]:
     """Run proposed, baseline2 (emb-only), baseline3 (pat-only) on same slide."""
-    from app.ml.checkpoints.loader import PROPOSED_AUROC, BASELINE2_AUROC, BASELINE3_AUROC, CHOQUET_AUROC
+    from app.ml.checkpoints.loader import (
+        BASELINE2_AUROC,
+        BASELINE3_AUROC,
+        CHOQUET_AUROC,
+        PROPOSED_AUROC,
+    )
 
     device = checkpoint_loader.device
     target_genes = genes or GENES_V2

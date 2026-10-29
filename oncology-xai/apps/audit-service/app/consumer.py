@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 
+from event_contracts.consumer import BaseConsumer
+from event_contracts.envelope import EventEnvelope
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from event_contracts.envelope import EventEnvelope
-from event_contracts.consumer import BaseConsumer
 from app.config import settings
 from app.models import AuditEventDB
 

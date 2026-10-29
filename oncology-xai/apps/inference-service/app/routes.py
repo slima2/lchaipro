@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 from uuid import uuid4
 
@@ -14,6 +16,8 @@ from app.config import settings
 from app.database import get_db
 from app.models import MLJobDB, ResultBundleDB, XAIArtifactDB
 from app.tasks import process_image_task
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Inference"])
 
@@ -63,12 +67,12 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
             from app.celery_app import celery
             celery.control.revoke(job.celery_task_id, terminate=True)
         except Exception:
-            pass
+            logger.debug("could not revoke celery task", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
 
     job.status = "CANCELLED"
     await db.commit()
 
-    from sqlalchemy import text, delete
+    from sqlalchemy import text
     case_id = job.case_id
     image_id = job.image_id
 
@@ -178,7 +182,13 @@ async def get_checkpoint_status():
 @router.get("/parameters")
 async def get_parameters():
     """Return current system parameters."""
-    from app.ml.checkpoints.loader import PROPOSED_AUROC, AUROC_THRESHOLD, BEST_METHOD, BEST_FOLD, GENE_MUTATION_THRESHOLD
+    from app.ml.checkpoints.loader import (
+        AUROC_THRESHOLD,
+        BEST_FOLD,
+        BEST_METHOD,
+        GENE_MUTATION_THRESHOLD,
+        PROPOSED_AUROC,
+    )
     return {
         "auroc_values": PROPOSED_AUROC,
         "auroc_threshold": AUROC_THRESHOLD,
@@ -366,8 +376,9 @@ def _bundle_dict(b: ResultBundleDB) -> dict:
 @router.post("/gene-explain")
 async def gene_explain(body: dict[str, Any]):
     """Generate LLM explanation for a gene prediction using backend OpenAI key."""
-    import httpx
     import os
+
+    import httpx
 
     prompt = body.get("prompt", "")
     language = body.get("language", "en")
@@ -398,5 +409,5 @@ async def gene_explain(body: dict[str, Any]):
                 txt = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"explanation": txt}
     except Exception:
-        pass
+        logger.debug("LLM explanation request failed", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
     return {"explanation": None}

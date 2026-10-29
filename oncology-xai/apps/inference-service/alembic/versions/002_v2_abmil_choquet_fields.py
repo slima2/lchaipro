@@ -4,8 +4,8 @@ Revision ID: 002_v2_fields
 Revises: 001_initial_tables
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "002"
 down_revision = "001"

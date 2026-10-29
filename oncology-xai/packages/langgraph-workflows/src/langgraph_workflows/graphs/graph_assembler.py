@@ -9,12 +9,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 import httpx
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from langgraph_workflows.state import GraphState, update_exec
 from langgraph_workflows.tools.storage import get_storage_tool
@@ -177,7 +177,7 @@ async def fuse_annotate_provenance(state: GraphState) -> GraphState:
     edges = inter.get("edges", [])
 
     # Add provenance metadata to edges
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     for edge in edges:
         if "timestamp" not in edge:
             edge["timestamp"] = now_iso

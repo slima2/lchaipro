@@ -2,26 +2,31 @@
 
 from __future__ import annotations
 
-import io
 import hashlib
+import io
 import json
 import logging
 from datetime import datetime
 from uuid import uuid4
 
+from event_contracts import EventEnvelope, EventPublisher
+from oncology_common.storage import StorageClient
+
 from app.celery_app import celery
 from app.config import settings
 from app.database import get_sync_db
 from app.models import (
-    MLJobDB, ResultBundleDB, PatternResultDB,
-    GeneticResultDB, XAIArtifactDB, MorphologicProfileDB,
+    GeneticResultDB,
+    MLJobDB,
+    MorphologicProfileDB,
+    PatternResultDB,
+    ResultBundleDB,
+    XAIArtifactDB,
 )
 from app.roi_inference_ctranspath_fuzzyarcloss_v3 import (
-    InferenceConfig, InferenceResult, run_inference,
+    InferenceConfig,
+    run_inference,
 )
-
-from oncology_common.storage import StorageClient
-from event_contracts import EventEnvelope, EventPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +55,7 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
                     j.error_detail = stage
                 db.commit()
         except Exception:
-            pass
+            logger.debug("could not update job status", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
 
     try:
         job = db.query(MLJobDB).filter_by(id=job_id).first()
@@ -399,4 +404,3 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         db.close()
 
 
-import io  # noqa: E402 — needed by task body

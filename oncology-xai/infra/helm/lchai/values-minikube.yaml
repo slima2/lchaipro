@@ -7,9 +7,9 @@ environment: production
 image:
   # Imágenes parchadas compiladas desde el código fuente dentro de minikube (ver infra/minikube/README.md)
   pullPolicy: Never
-  tag: sec-20261028
+  tag: sec-20261029
   tags:
-    webapp: portable-20261028   # compilada sin URL: sirve para cualquier dominio
+    webapp: portable-20261029   # compilada sin URL: sirve para cualquier dominio
 
 nodeSelector:
   general: null
@@ -80,3 +80,6 @@ auth:
 
 networkPolicy:
   enabled: true   # el CNI por defecto de minikube no las aplica; se validan con Calico (ver README)
+
+podSecurity:
+  hardened: true   # sin token de Kubernetes, sin root y sin escalada de privilegios

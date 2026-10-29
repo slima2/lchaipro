@@ -6,15 +6,14 @@ ValidateClaimsGuardrails → PublishReport → Finalize
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 import httpx
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from langgraph_workflows.state import GraphState, update_exec
 from langgraph_workflows.tools.storage import get_storage_tool
@@ -55,7 +54,7 @@ async def gather_evidence(state: GraphState) -> GraphState:
 
     evidence: dict[str, Any] = {
         "case_id": ctx.get("case_id"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "patterns": [],
         "mutations": [],
         "ehr_entities": [],
@@ -161,7 +160,7 @@ async def draft_explanation(state: GraphState) -> GraphState:
     sections.append("# Morphological and Molecular Analysis Report")
     sections.append(f"\n**Case ID:** {evidence.get('case_id', 'N/A')}")
     sections.append(f"**Generated:** {evidence.get('timestamp', 'N/A')}")
-    sections.append(f"**Evidence Source:** THESIS_INTERNAL")
+    sections.append("**Evidence Source:** THESIS_INTERNAL")
 
     # Pattern analysis
     sections.append("\n## Histological Pattern Analysis")

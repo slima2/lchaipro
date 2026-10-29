@@ -9,8 +9,7 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
-
-from oncology_common.auth.dependencies import get_current_user, require_roles
+from oncology_common.auth.dependencies import require_roles
 from oncology_common.auth.jwt import TokenPayload
 
 _DEV_MODE = (

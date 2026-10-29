@@ -1,6 +1,7 @@
 """Celery application for inference workers."""
 
 from celery import Celery
+
 from app.config import settings
 
 celery = Celery(

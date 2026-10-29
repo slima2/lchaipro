@@ -1,7 +1,7 @@
 """JWT validation with JWKS support for Keycloak."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -35,7 +35,7 @@ class TokenPayload(BaseModel):
 
     @property
     def is_expired(self) -> bool:
-        return datetime.now(timezone.utc).timestamp() > self.exp
+        return datetime.now(UTC).timestamp() > self.exp
 
 
 class JWTValidator:
@@ -64,7 +64,7 @@ class JWTValidator:
             return resp.json()
 
     async def get_jwks(self) -> dict[str, Any]:
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         async with self._lock:
             if self._jwks is None or (now - self._jwks_fetched_at) > self.cache_ttl:
                 self._jwks = await self._fetch_jwks()

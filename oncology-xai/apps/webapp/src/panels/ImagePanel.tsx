@@ -81,7 +81,7 @@ export default function ImagePanel({ caseId, imageId: initialImageId, onImageSel
         const patRes = await createPatient({ external_id: uniqueId });
         patientId = patRes.data.patient_id;
       } catch {
-        const patRes = await createPatient({ external_id: `${uniqueId}_${Math.random().toString(36).slice(2, 6)}` });
+        const patRes = await createPatient({ external_id: `${uniqueId}_${crypto.randomUUID().slice(0, 4)}` });
         patientId = patRes.data.patient_id;
       }
       const caseRes = await createCase({ patient_id: patientId });

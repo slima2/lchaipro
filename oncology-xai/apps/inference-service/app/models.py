@@ -3,10 +3,9 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, Boolean, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from oncology_common.database import Base
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class MLJobDB(Base):
@@ -94,7 +93,6 @@ class GeneticResultDB(Base):
     # v2 ablation + permutation
     ablation_data: Mapped[dict | None] = mapped_column(JSON)
     permutation_data: Mapped[dict | None] = mapped_column(JSON)
-    #
     evidence_source: Mapped[str] = mapped_column(String(50), default="THESIS_INTERNAL")
     intended_use: Mapped[str] = mapped_column(String(200), default="research / decision support (non-diagnostic)")
     evidence_uri: Mapped[str | None] = mapped_column(String(1024))

@@ -8,7 +8,7 @@ interaction indices (C(6,2) = 15 params) → 21 learnable params total.
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class FuzzyMeasure(nn.Module):

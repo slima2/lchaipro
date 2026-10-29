@@ -4,10 +4,9 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
-from app.models import PatientDB, CaseDB  # noqa: F401
+from app.models import CaseDB, PatientDB  # noqa: F401
 from oncology_common.database import Base
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 

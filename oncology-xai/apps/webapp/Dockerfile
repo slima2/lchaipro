@@ -26,5 +26,11 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 COPY apps/webapp/nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV CSP_S3_ORIGIN=""
 
+# Sin privilegios de administrador (Trivy DS-0002, SonarQube S6471): usuario nginx (uid 101).
+# Necesita escribir la configuración generada desde la plantilla, la caché y el archivo de PID.
+RUN chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d && \
+    sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf
+USER 101
+
 EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]

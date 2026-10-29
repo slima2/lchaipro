@@ -11,12 +11,12 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import httpx
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from langgraph_workflows.state import GraphState, update_exec
 from langgraph_workflows.tools.storage import get_storage_tool
@@ -173,7 +173,7 @@ async def compute_diff(state: GraphState) -> GraphState:
         logger.debug("Could not fetch current ontology versions: %s", exc)
 
     diff_report = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "current_versions": current_versions,
         "new_sources": inter.get("parsed_elements", []),
         "added_classes": [],
@@ -221,7 +221,7 @@ async def reasoner_check(state: GraphState) -> GraphState:
         "unsatisfiable": [],
         "inferred_relations": len(inter.get("extracted_relations", [])),
         "reasoner": "mock_hermit",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     inter["reasoner_result"] = reasoner_result
@@ -243,7 +243,7 @@ async def impact_analysis(state: GraphState) -> GraphState:
         "breaking_changes": len(diff.get("removed_classes", [])),
         "new_inferences": reasoner.get("inferred_relations", 0),
         "recommendation": "proceed" if reasoner.get("consistency") else "review_required",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     inter["impact_analysis"] = impact

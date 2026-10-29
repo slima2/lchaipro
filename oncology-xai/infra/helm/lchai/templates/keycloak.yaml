@@ -13,6 +13,7 @@ spec:
       labels:
         app: keycloak
     spec:
+      {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: keycloak

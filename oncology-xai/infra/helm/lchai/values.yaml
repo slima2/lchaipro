@@ -154,6 +154,12 @@ auth:
 webapp:
   cspS3Origin: ""       # vacío = se deduce de s3.endpoint (o AWS S3)
 
+# Imágenes propias sin root ni escalada de privilegios (requiere imágenes sec-20261029 o posteriores).
+# Apagado en AWS (sus imágenes de producción corren como root); encendido en Telconet y minikube.
+# El token de Kubernetes y el límite de disco temporal de RabbitMQ y Fuseki se aplican siempre.
+podSecurity:
+  hardened: false
+
 # NetworkPolicies: solo el tráfico necesario entre componentes (requiere un CNI que las aplique)
 networkPolicy:
   enabled: false

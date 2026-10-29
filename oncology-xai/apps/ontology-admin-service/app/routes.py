@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 from typing import Any
@@ -15,16 +15,27 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import asyncio
-
 from app.config import settings
-from app.database import get_db, async_session
-from app.deep_search import run_pipeline, extract_relations_llm, entity_link, deduplicate, validate_relations
-from app.literature_search import batch_literature_search, DEFAULT_QUERIES
-from app.models import (
-    OntologyVersionDB, OntologyUpdateProposalDB,
-    KGSnapshotDB, KGChangelogEntryDB, DeepSearchJobDB, DiscoveredRelationDB,
+from app.database import async_session, get_db
+from app.deep_search import (
+    deduplicate,
+    entity_link,
+    extract_relations_llm,
+    run_pipeline,
+    validate_relations,
 )
+from app.literature_search import DEFAULT_QUERIES, batch_literature_search
+from app.models import (
+    DeepSearchJobDB,
+    DiscoveredRelationDB,
+    KGChangelogEntryDB,
+    KGSnapshotDB,
+    OntologyUpdateProposalDB,
+    OntologyVersionDB,
+)
+
+# Tareas en segundo plano en curso (ver S7502 más abajo)
+_BACKGROUND_TASKS: set = set()
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Ontology Admin"])
 
@@ -156,7 +167,7 @@ async def run_deep_search(body: dict[str, Any], db: AsyncSession = Depends(get_d
             "invalid": result["invalid_relations"],
         }
         job.status = "COMPLETED"
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
     except Exception as exc:
         job.status = "FAILED"
         job.error = str(exc)[:500]
@@ -201,7 +212,7 @@ def _job_dict(j: DeepSearchJobDB) -> dict:
 @router.post("/kg/snapshots", status_code=status.HTTP_201_CREATED)
 async def create_kg_snapshot(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
     """Create a new KG version snapshot from validated DeepSearch results."""
-    version_tag = body.get("version_tag", datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M"))
+    version_tag = body.get("version_tag", datetime.now(UTC).strftime("v%Y%m%d-%H%M"))
     description = body.get("description", "")
     relations = body.get("relations", [])
 
@@ -302,8 +313,11 @@ async def start_batch_deep_search(body: dict[str, Any] | None = None, db: AsyncS
     await db.commit()
     await db.refresh(job)
 
-    # Fire and forget background task
-    asyncio.create_task(_run_batch_job(job.id, queries, sources))
+    # Fire and forget background task. Se guarda una referencia hasta que termine: sin ella Python puede
+    # borrar la tarea a mitad de camino (SonarQube python:S7502).
+    task = asyncio.create_task(_run_batch_job(job.id, queries, sources))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     return {
         "job_id": job.id,
@@ -391,7 +405,7 @@ async def _run_batch_job(job_id: str, queries: list[str], sources: list[str]) ->
 
             # Update job
             job.status = "COMPLETED"
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             job.linked_entities = {
                 "papers_found": len(papers),
                 "papers_processed": papers_processed,
@@ -414,7 +428,7 @@ async def _run_batch_job(job_id: str, queries: list[str], sources: list[str]) ->
         except Exception as exc:
             job.status = "FAILED"
             job.error = str(exc)[:500]
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             await db.commit()
             logger.error("Batch job %s FAILED: %s", job_id[:8], exc)
 

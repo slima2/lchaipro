@@ -21,6 +21,10 @@ import torch
 from app.ml.models.abmil import ABMIL
 from app.ml.models.choquet_mil import FuzzyChoquetMIL
 
+from oncology_common.safe_torch import allow_numpy_globals
+
+allow_numpy_globals()  # torch.load(weights_only=True) con los tipos de numpy de los checkpoints
+
 logger = logging.getLogger(__name__)
 
 GENES_V2 = ["TP53", "EGFR", "KRAS", "STK11", "KEAP1", "RBM10"]
@@ -121,7 +125,7 @@ class CheckpointLoader:
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=False)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded ABMIL checkpoint %s for %s (fold %d)", fname, gene, fold)
@@ -151,7 +155,7 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=False)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline2 (emb-only) %s for %s", fname, gene)
@@ -181,7 +185,7 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=False)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline3 (pat-only) %s for %s", fname, gene)
@@ -216,7 +220,7 @@ class CheckpointLoader:
         model = FuzzyChoquetMIL(embed_dim, n_patterns, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=False)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded Choquet checkpoint %s for %s (fold %d)", fname, gene, fold)

@@ -8,16 +8,16 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     log_level: str = "INFO"
 
-    postgres_dsn: str = "postgresql+asyncpg://oncology:oncology_secret@postgres:5432/oncology_xai"
-    postgres_dsn_sync: str = "postgresql://oncology:oncology_secret@postgres:5432/oncology_xai"
+    postgres_dsn: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    postgres_dsn_sync: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
 
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
+    s3_secret_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
     s3_bucket: str = "oncology-xai"
 
     inference_service_url: str = "http://inference-service:8003"
-    rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
+    rabbitmq_url: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
 
     delta_train_epochs: int = 10
     delta_train_lr: float = 1e-5

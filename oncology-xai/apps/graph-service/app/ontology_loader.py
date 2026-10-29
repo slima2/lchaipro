@@ -188,7 +188,8 @@ CURATED_EDGES: list[dict] = [
 def _enrich_labels_from_owl(nodes: dict[str, dict], ncit_path: str, mondo_path: str) -> None:
     """Try to replace placeholder labels with rdfs:label from OWL files."""
     try:
-        from rdflib import Graph as RDFGraph, URIRef
+        from rdflib import Graph as RDFGraph
+        from rdflib import URIRef
         from rdflib.namespace import RDFS
     except ImportError:
         logger.debug("rdflib not available for label enrichment")
@@ -218,7 +219,7 @@ def _enrich_labels_from_owl(nodes: dict[str, dict], ncit_path: str, mondo_path: 
                     data["label"] = lbl
                 break
         except Exception:
-            pass
+            logger.debug("could not read ontology label", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
 
 
 # ──────────────────────────────────────────────────────────────────────

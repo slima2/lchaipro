@@ -8,16 +8,24 @@ import logging
 from uuid import uuid4
 
 import numpy as np
-from PIL import Image as PILImage
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from fastapi import Request
-from oncology_common.storage import StorageClient
 from event_contracts.envelope import EventEnvelope
 from event_contracts.publisher import EventPublisher
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import Response
+from oncology_common.storage import StorageClient
+from PIL import Image as PILImage
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
 from app.database import get_db
 from app.models import ImageDB
@@ -50,8 +58,10 @@ def _validate_he_stain(data: bytes, ext: str) -> None:
     try:
         if ext in ("svs", "bif", "biff"):
             try:
+                import os
+                import tempfile
+
                 import openslide
-                import tempfile, os
                 suffix = {"svs": ".svs", "bif": ".bif", "biff": ".bif"}.get(ext, ".tif")
                 with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
                     f.write(data[:min(len(data), 100_000_000)])

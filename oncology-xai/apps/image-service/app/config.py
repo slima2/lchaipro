@@ -8,12 +8,12 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     log_level: str = "INFO"
 
-    postgres_dsn: str = "postgresql+asyncpg://oncology:oncology_secret@postgres:5432/oncology_xai"
-    rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
+    postgres_dsn: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    rabbitmq_url: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
     s3_endpoint: str = "http://minio:9000"
     s3_endpoint_external: str = "http://localhost:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
+    s3_secret_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
     s3_bucket: str = "oncology-xai"
     otel_exporter_otlp_endpoint: str | None = None
 

@@ -8,7 +8,7 @@ One model per gene, trained with 5-fold stratified CV on TCGA-LUAD.
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class GatedAttention(nn.Module):

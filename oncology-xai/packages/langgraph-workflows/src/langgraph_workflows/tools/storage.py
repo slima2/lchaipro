@@ -15,8 +15,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 S3_ENDPOINT = os.getenv("S3_ENDPOINT_URL", "http://localhost:9000")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")  # sin clave por defecto en el codigo
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 S3_BUCKET = os.getenv("S3_BUCKET", "oncology-xai")
 
 

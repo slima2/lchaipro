@@ -4,12 +4,13 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from app.models import (  # noqa: F401
-    OntologyVersionDB, OntologyUpdateProposalDB, ExplanationReportDB,
+    ExplanationReportDB,
+    OntologyUpdateProposalDB,
+    OntologyVersionDB,
 )
 from oncology_common.database import Base
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 

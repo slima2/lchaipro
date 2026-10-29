@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
-from app.ml.checkpoints.loader import CheckpointLoader, GENES_V2
+from app.ml.checkpoints.loader import GENES_V2, CheckpointLoader
 
 logger = logging.getLogger(__name__)
 
