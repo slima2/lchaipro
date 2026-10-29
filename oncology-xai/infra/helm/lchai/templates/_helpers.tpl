@@ -156,9 +156,26 @@ los permisos del punto de montaje (solo con storage.fixPermissions=true). Uso: d
 securityContext:
   runAsNonRoot: true
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true   # las rutas escribibles (/tmp, caché de nginx) van en emptyDir
   capabilities:
     drop: ["ALL"]
   seccompProfile:
     type: RuntimeDefault
+{{- end }}
+{{- end -}}
+
+{{/* /tmp escribible (HOME de los servicios Python) cuando el contenedor corre con raíz de solo lectura */}}
+{{- define "lchai.tmpMount" -}}
+{{- if .Values.podSecurity.hardened }}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+{{- end -}}
+
+{{- define "lchai.tmpVolume" -}}
+{{- if .Values.podSecurity.hardened }}
+- name: tmp
+  emptyDir:
+    sizeLimit: 1Gi
 {{- end }}
 {{- end -}}

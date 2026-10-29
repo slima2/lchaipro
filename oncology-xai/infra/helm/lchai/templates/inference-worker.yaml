@@ -83,6 +83,7 @@ spec:
               mountPath: /data
             - name: scripts
               mountPath: /scripts
+            {{- include "lchai.tmpMount" $ | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: lchai-config
@@ -109,6 +110,7 @@ spec:
           volumeMounts:
             - name: model-data
               mountPath: /data
+            {{- include "lchai.tmpMount" $ | nindent 12 }}
           resources:
             requests:
               cpu: {{ .Values.inferenceWorker.resources.requests.cpu | quote }}
@@ -129,4 +131,5 @@ spec:
         - name: scripts
           configMap:
             name: lchai-model-download
+        {{- include "lchai.tmpVolume" $ | nindent 8 }}
 {{- end }}

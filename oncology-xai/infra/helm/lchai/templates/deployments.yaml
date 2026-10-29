@@ -42,6 +42,10 @@ spec:
                 name: lchai-config
             - secretRef:
                 name: lchai-secrets
+          {{- with include "lchai.tmpMount" $ }}
+          volumeMounts:
+            {{- . | nindent 12 }}
+          {{- end }}
           resources:
             requests:
               cpu: 250m
@@ -60,6 +64,10 @@ spec:
             {{- end }}
             initialDelaySeconds: 10
             periodSeconds: 15
+      {{- with include "lchai.tmpVolume" $ }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

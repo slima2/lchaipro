@@ -33,6 +33,16 @@ spec:
               value: "oncology"
             - name: VITE_KEYCLOAK_CLIENT_ID
               value: "oncology-webapp"
+          {{- if .Values.podSecurity.hardened }}
+          # Raíz de solo lectura: nginx escribe la configuración generada desde la plantilla, la caché y el PID
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+          {{- end }}
           resources:
             requests:
               cpu: 100m
@@ -40,6 +50,18 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      {{- if .Values.podSecurity.hardened }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: nginx-conf
+          emptyDir:
+            sizeLimit: 8Mi
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
