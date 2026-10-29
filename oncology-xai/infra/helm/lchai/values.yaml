@@ -12,6 +12,9 @@ publicUrl: ""
 image:
   registry: 632100838024.dkr.ecr.us-east-1.amazonaws.com
   prefix: lchai-prod
+  # Separador entre prefix y nombre del servicio: "/" (<prefix>/<servicio>) o "-" (<prefix>-<servicio>, p. ej.
+  # cuando el registro publica imágenes planas como registry.gitlab.telconet.ec/docker/images/txt-solca-lchai-api-gateway)
+  separator: "/"
   tag: latest
   pullPolicy: Always
   # Etiqueta por servicio; si un servicio no aparece, usa image.tag
@@ -109,6 +112,11 @@ inferenceWorker:
     requests: { cpu: "2", memory: 4Gi }
     limits: { cpu: "4", memory: 8Gi }
 
+# Readiness de los servicios Python. http = GET /metrics (o /health), deja una línea de access log cada 15 s por pod;
+# tcpSocket = solo comprueba que el puerto acepta conexiones (sin ruido en los logs).
+probes:
+  type: http
+
 services:
   gateway:
     replicas: 2
@@ -140,12 +148,20 @@ remoteWorker:
   allowedCidrs: []            # obligatorio: IP del worker remoto, p. ej. ["10.20.0.15/32"]
   annotations: {}             # p. ej. balanceador interno del proveedor
 
+# Contraseñas y claves fuera del chart. false = el chart crea lchai-secrets con los values (postgres.password,
+# rabbitmq.password, ...). true = el chart NO crea lchai-secrets ni lchai-s3-config: deben existir en el namespace,
+# creados por fuera (kubectl, External Secrets), con las claves de templates/secret.yaml y s3.json (SeaweedFS).
+# Con true no se pasa ninguna contraseña en los values. Con localDeps y Redis, REDIS_PASSWORD debe ser no vacía.
+secrets:
+  existing: false
+
 # PostgreSQL, Redis y almacenamiento S3 (SeaweedFS) dentro del cluster (minikube u on-premise sin servicios administrados)
 localDeps:
   enabled: false
   postgres:
     image: postgres:16-alpine
     storage: 5Gi
+    fixPermissions: false   # true en discos Lustre (initContainer root que abre permisos; postgres corre como uid 70)
   redis:
     image: redis:7-alpine
   s3:

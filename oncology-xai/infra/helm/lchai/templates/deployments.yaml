@@ -50,9 +50,14 @@ spec:
               cpu: "1"
               memory: 1Gi
           readinessProbe:
+            {{- if eq ($.Values.probes.type | default "http") "tcpSocket" }}
+            tcpSocket:
+              port: {{ $svc.port }}
+            {{- else }}
             httpGet:
               path: {{ $svc.probe | default "/metrics" }}
               port: {{ $svc.port }}
+            {{- end }}
             initialDelaySeconds: 10
             periodSeconds: 15
 ---

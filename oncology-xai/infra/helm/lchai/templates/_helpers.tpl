@@ -1,12 +1,12 @@
 {{- define "lchai.image" -}}
-{{ .Values.image.registry }}/{{ .Values.image.prefix }}/{{ .svc }}:{{ .Values.image.tag }}
+{{ .Values.image.registry }}/{{ .Values.image.prefix }}{{ .Values.image.separator | default "/" }}{{ .svc }}:{{ .Values.image.tag }}
 {{- end -}}
 
 {{/* Imagen de un servicio: usa image.tags.<servicio> si existe, si no image.tag */}}
 {{- define "lchai.svcImage" -}}
 {{- $tags := .root.Values.image.tags | default dict -}}
 {{- $tag := index $tags .svc | default .root.Values.image.tag -}}
-{{ .root.Values.image.registry }}/{{ .root.Values.image.prefix }}/{{ .svc }}:{{ $tag }}
+{{ .root.Values.image.registry }}/{{ .root.Values.image.prefix }}{{ .root.Values.image.separator | default "/" }}{{ .svc }}:{{ $tag }}
 {{- end -}}
 
 {{/* nodeSelector por grupo de nodos (general | gpu); vacío = sin nodeSelector */}}

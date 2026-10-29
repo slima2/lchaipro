@@ -30,9 +30,27 @@ spec:
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- if $d.postgres.fixPermissions }}
+      # Discos Lustre (CSI): initdb no puede hacer chown y fsGroup no alcanza. Un initContainer como root
+      # abre los permisos del directorio de datos y postgres corre como su usuario (uid 70 en alpine).
+      initContainers:
+        - name: fix-permissions
+          image: {{ $d.postgres.image }}
+          command: ["sh", "-c", "mkdir -p /var/lib/postgresql/data/pgdata && chmod a+rwx /var/lib/postgresql/data /var/lib/postgresql/data/pgdata"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      {{- end }}
       containers:
         - name: postgres
           image: {{ $d.postgres.image }}
+          {{- if $d.postgres.fixPermissions }}
+          securityContext:
+            runAsUser: 70
+            runAsGroup: 70
+          {{- end }}
           ports:
             - containerPort: 5432
           env:
@@ -105,7 +123,7 @@ spec:
       containers:
         - name: redis
           image: {{ $d.redis.image }}
-          {{- if $.Values.redis.password }}
+          {{- if or $.Values.redis.password $.Values.secrets.existing }}
           args: ["--requirepass", "$(REDIS_PASSWORD)"]
           env:
             - name: REDIS_PASSWORD
@@ -130,6 +148,7 @@ spec:
       targetPort: 6379
 ---
 # Almacenamiento compatible con S3: SeaweedFS (Apache 2.0) sobre un volumen persistente
+{{- if not .Values.secrets.existing }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -141,6 +160,7 @@ stringData:
       "credentials": [{"accessKey": {{ .Values.s3.accessKey | quote }}, "secretKey": {{ .Values.s3.secretKey | quote }}}],
       "actions": ["Admin", "Read", "Write", "List", "Tagging"]}]}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -260,9 +280,11 @@ spec:
               echo listo
           env:
             - name: AWS_ACCESS_KEY_ID
-              value: {{ .Values.s3.accessKey | quote }}
+              valueFrom:
+                secretKeyRef: { name: lchai-secrets, key: S3_ACCESS_KEY }
             - name: AWS_SECRET_ACCESS_KEY
-              value: {{ .Values.s3.secretKey | quote }}
+              valueFrom:
+                secretKeyRef: { name: lchai-secrets, key: S3_SECRET_KEY }
             - name: AWS_DEFAULT_REGION
               value: {{ .Values.s3.region | quote }}
 {{- if and $d.s3.host (ne .Values.ingress.provider "none") }}
