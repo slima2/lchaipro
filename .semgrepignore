@@ -1,0 +1,18 @@
+# Exclusiones por defecto de Semgrep (un .semgrepignore propio las reemplaza)
+.git/
+:include .gitignore
+node_modules/
+build/
+dist/
+vendor/
+.env/
+.venv/
+.tox/
+*.min.js
+test/
+tests/
+
+# Código de investigación de la tesis: no se empaqueta en ninguna imagen ni se despliega
+# (los Dockerfile solo copian apps/ y packages/). Entrena y evalúa modelos fuera del cluster.
+oncology-xai/Thesis/
+oncology-xai/thesis_edits/

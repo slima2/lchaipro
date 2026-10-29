@@ -125,7 +125,7 @@ class CheckpointLoader:
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded ABMIL checkpoint %s for %s (fold %d)", fname, gene, fold)
@@ -155,7 +155,7 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline2 (emb-only) %s for %s", fname, gene)
@@ -185,7 +185,7 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline3 (pat-only) %s for %s", fname, gene)
@@ -220,7 +220,7 @@ class CheckpointLoader:
         model = FuzzyChoquetMIL(embed_dim, n_patterns, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
+            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded Choquet checkpoint %s for %s (fold %d)", fname, gene, fold)

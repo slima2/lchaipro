@@ -53,7 +53,7 @@ def run_delta_training(
         n_tiles = tile_embeddings.shape[0]
         logger.info("Loaded tile data: %d tiles, embeddings=%s", n_tiles, tile_embeddings.shape)
 
-        ck = torch.load(io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=True)
+        ck = torch.load(io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
         head_weight = ck.get("loss_fn", {}).get("head.weight")
         if head_weight is None:
             head_weight = ck.get("loss_fn", {}).get("weight")
@@ -125,7 +125,7 @@ def run_delta_training(
         version_tag = f"al_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
         buf = io.BytesIO()
-        torch.save(ck, buf)
+        torch.save(ck, buf)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- serializa un state_dict propio; se vuelve a leer con weights_only=True
         pth_bytes = buf.getvalue()
 
         logger.info("Delta training complete: %d corrections, %d buffer, version=%s",

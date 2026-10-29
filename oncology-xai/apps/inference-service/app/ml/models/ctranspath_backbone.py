@@ -91,7 +91,7 @@ class CTransPathBackbone(nn.Module):
             logger.info("CTransPath backbone loaded from %s (out_features=%d)", checkpoint_path, self.out_features)
 
     def _load_checkpoint(self, checkpoint_path: str):
-        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
 
         if isinstance(checkpoint, dict):
             state_dict = checkpoint.get("model", checkpoint.get("state_dict", checkpoint))
@@ -162,7 +162,7 @@ class CTransPathPipeline(nn.Module):
     @classmethod
     def from_finetuned(cls, checkpoint_path: str, device: str = "cpu") -> CTransPathPipeline:
         """Load from best_fuzzyarcloss_v2.pth which has the finetuned backbone+projection."""
-        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
         config = ck.get("config", {})
         embed_dim = config.get("EMBED_DIM", 512)
         in_chans = 4 if config.get("USE_MASK_AS_CHANNEL", True) else 3
@@ -190,7 +190,7 @@ class CTransPathPipeline(nn.Module):
     @staticmethod
     def load_classifier_weights(checkpoint_path: str, device: str = "cpu") -> dict[str, Any]:
         """Load FuzzyArcLoss V2 classifier weights + config from checkpoint."""
-        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
         config = ck.get("config", {})
         loss_fn = ck.get("loss_fn", {})
         id2label = {int(k): v for k, v in ck.get("id2label", {0: "micropapillary", 1: "cribriform", 2: "papillary", 3: "lepidic", 4: "solid", 5: "acinar"}).items()}
