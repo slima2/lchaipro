@@ -29,3 +29,6 @@ yarn-error.log*
 **/*.zip
 **/runs/
 **/outputs/
+
+# Contraseñas de despliegue (infra/helm/lchai/README.md, paso 3)
+secrets-*.yaml

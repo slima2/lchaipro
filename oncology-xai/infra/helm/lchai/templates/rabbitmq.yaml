@@ -1,3 +1,4 @@
+{{- if .Values.layers.platform }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -13,19 +14,20 @@ spec:
       labels:
         app: rabbitmq
     spec:
-      nodeSelector:
-        workload: general
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: rabbitmq
-          image: rabbitmq:3.12-management-alpine
+          image: {{ .Values.rabbitmq.image }}
           ports:
             - containerPort: 5672
             - containerPort: 15672
           env:
             - name: RABBITMQ_DEFAULT_USER
-              value: guest
+              valueFrom:
+                secretKeyRef: { name: lchai-secrets, key: RABBITMQ_USER }
             - name: RABBITMQ_DEFAULT_PASS
-              value: guest
+              valueFrom:
+                secretKeyRef: { name: lchai-secrets, key: RABBITMQ_PASSWORD }
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
@@ -41,7 +43,9 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: gp2
+        {{- with .Values.storage.className }}
+        storageClassName: {{ . }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.rabbitmq.storage }}
@@ -58,3 +62,4 @@ spec:
       port: 5672
     - name: management
       port: 15672
+{{- end }}

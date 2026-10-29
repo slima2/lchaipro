@@ -1,48 +1,87 @@
+{{- if .Values.layers.inference }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lchai-model-download
+data:
+  download_models.py: |
+    """Descarga los modelos (.pth) del bucket de modelos a /data antes de iniciar el worker.
+    Funciona con AWS S3 (credenciales del rol IAM) o con cualquier S3 compatible (MinIO, Ceph)."""
+    import os
+    import boto3
+
+    endpoint = os.environ.get("S3_ENDPOINT", "")
+    kwargs = {"region_name": os.environ.get("MODELS_REGION", "us-east-1")}
+    if endpoint and "amazonaws.com" not in endpoint:
+        kwargs.update(
+            endpoint_url=endpoint,
+            aws_access_key_id=os.environ.get("S3_ACCESS_KEY") or None,
+            aws_secret_access_key=os.environ.get("S3_SECRET_KEY") or None,
+        )
+    s3 = boto3.client("s3", **kwargs)
+    bucket = os.environ["MODELS_BUCKET"]
+    only = {n.strip() for n in os.environ.get("MODEL_FILES", "").split(",") if n.strip()}
+
+    for prefix, dest in (("backbones/", "/data/models"), ("checkpoints/", "/data/checkpoints")):
+        os.makedirs(dest, exist_ok=True)
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                name = key.rsplit("/", 1)[-1]
+                if not name.endswith(".pth") or "_backup" in key:
+                    continue
+                if only and prefix == "backbones/" and name not in only:
+                    continue
+                print(f"Downloading {key}...", flush=True)
+                s3.download_file(bucket, key, f"{dest}/{name}")
+    print("Done", flush=True)
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: inference-worker
 spec:
   replicas: 1
+  {{- with .Values.inferenceWorker.updateStrategy }}
+  # Recreate: apaga el worker viejo antes de crear el nuevo. Con RollingUpdate se necesitan dos GPU
+  # (o el doble de CPU) durante el cambio, y con una sola GPU el pod nuevo queda Pending para siempre.
+  strategy:
+    type: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       app: inference-worker
   template:
     metadata:
+      annotations:
+        {{- include "lchai.configChecksum" $ | nindent 8 }}
       labels:
         app: inference-worker
     spec:
-      nodeSelector:
-        workload: gpu
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" (ternary "gpu" "general" .Values.inferenceWorker.gpu)) | nindent 6 }}
+      {{- if .Values.inferenceWorker.gpu }}
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
           effect: "NoSchedule"
+      {{- end }}
       initContainers:
         - name: download-models
-          image: {{ .Values.image.registry }}/{{ .Values.image.prefix }}/inference-service:{{ .Values.image.tag }}
-          command: ["python3", "-c", "
-import boto3, os;
-s3 = boto3.client('s3', region_name='{{ .Values.s3.region }}');
-os.makedirs('/data/models', exist_ok=True);
-os.makedirs('/data/checkpoints', exist_ok=True);
-bucket_m = '{{ .Values.s3.modelsBucket }}';
-bucket_c = '{{ .Values.s3.modelsBucket }}';
-for obj in s3.list_objects_v2(Bucket=bucket_m, Prefix='backbones/').get('Contents', []):
-    key = obj['Key']; name = key.split('/')[-1];
-    if name.endswith('.pth') and '_backup' not in key:
-        print(f'Downloading {key}...');
-        s3.download_file(bucket_m, key, f'/data/models/{name}');
-for obj in s3.list_objects_v2(Bucket=bucket_c, Prefix='checkpoints/').get('Contents', []):
-    key = obj['Key']; name = key.split('/')[-1];
-    if name.endswith('.pth'):
-        print(f'Downloading {key}...');
-        s3.download_file(bucket_c, key, f'/data/checkpoints/{name}');
-print('Done');
-"]
+          image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python3", "/scripts/download_models.py"]
+          env:
+            - name: MODELS_BUCKET
+              value: {{ .Values.s3.modelsBucket | quote }}
+            - name: MODELS_REGION
+              value: {{ .Values.s3.region | quote }}
+            - name: MODEL_FILES
+              value: {{ .Values.inferenceWorker.modelFiles | default "" | quote }}
           volumeMounts:
             - name: model-data
               mountPath: /data
+            - name: scripts
+              mountPath: /scripts
           envFrom:
             - configMapRef:
                 name: lchai-config
@@ -50,7 +89,8 @@ print('Done');
                 name: lchai-secrets
       containers:
         - name: inference-worker
-          image: {{ .Values.image.registry }}/{{ .Values.image.prefix }}/inference-service:{{ .Values.image.tag }}
+          image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["celery", "-A", "app.celery_app:celery", "worker", "--loglevel=info", "--concurrency=1"]
           envFrom:
             - configMapRef:
@@ -69,14 +109,22 @@ print('Done');
               mountPath: /data
           resources:
             requests:
-              cpu: "2"
-              memory: 4Gi
+              cpu: {{ .Values.inferenceWorker.resources.requests.cpu | quote }}
+              memory: {{ .Values.inferenceWorker.resources.requests.memory }}
+              {{- if .Values.inferenceWorker.gpu }}
               nvidia.com/gpu: "1"
+              {{- end }}
             limits:
-              cpu: "4"
-              memory: 8Gi
+              cpu: {{ .Values.inferenceWorker.resources.limits.cpu | quote }}
+              memory: {{ .Values.inferenceWorker.resources.limits.memory }}
+              {{- if .Values.inferenceWorker.gpu }}
               nvidia.com/gpu: "1"
+              {{- end }}
       volumes:
         - name: model-data
           emptyDir:
             sizeLimit: 10Gi
+        - name: scripts
+          configMap:
+            name: lchai-model-download
+{{- end }}

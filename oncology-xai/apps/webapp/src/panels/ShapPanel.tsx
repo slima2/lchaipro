@@ -12,7 +12,9 @@ import {
   isDisallowedPatternName,
 } from '../patternConstants';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ||
+  // Compilada sin URL: mismo dominio desde el que se abre (una sola imagen para cualquier dominio)
+  (import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin);
 
 const _explanationCache: Record<string, string> = {};
 

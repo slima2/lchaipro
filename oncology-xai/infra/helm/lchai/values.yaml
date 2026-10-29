@@ -1,43 +1,112 @@
 domain: lchai.gptfy.biz
 
+# Capas a desplegar (para levantar el entorno por partes). Todas encendidas por defecto
+layers:
+  platform: true    # Keycloak, RabbitMQ, Fuseki
+  app: true         # microservicios, webapp e ingress
+  inference: true   # worker de inferencia
+
+# URL pública con esquema (y puerto si aplica). Vacío = https://<domain>
+publicUrl: ""
+
 image:
   registry: 632100838024.dkr.ecr.us-east-1.amazonaws.com
   prefix: lchai-prod
   tag: latest
+  pullPolicy: Always
+  # Etiqueta por servicio; si un servicio no aparece, usa image.tag
+  tags: {}
+
+# Selectores de nodo por grupo. {} = sin nodeSelector
+nodeSelector:
+  general:
+    workload: general
+  gpu:
+    workload: gpu
+
+# StorageClass de los discos persistentes. "" = la clase por defecto del cluster
+storage:
+  className: gp2
+
+ingress:
+  # alb (AWS) | nginx (ingress-nginx, con las anotaciones que lchai necesita) | traefik | generic (cualquier otro)
+  # | none (sin Ingress: un proxy externo enruta a los Service, ver infra/minikube/README.md)
+  provider: alb
+  className: ""
+  annotations: {}      # se suman a las del provider y pueden sobrescribirlas
+  tls:
+    enabled: false     # false si el TLS lo termina un proxy o balanceador delante del cluster
+    secretName: ""     # Secret con el certificado de <domain> (lo crea cert-manager si hay clusterIssuer)
+    s3SecretName: ""   # certificado del host S3 público (localDeps.s3.host); vacío = <secretName>-s3
+    clusterIssuer: ""  # p. ej. letsencrypt-prod: agrega cert-manager.io/cluster-issuer
 
 postgres:
   host: lchai-prod-postgres.cslc0oga28vr.us-east-1.rds.amazonaws.com
   port: 5432
   database: oncology_xai
   username: oncology
+  sslMode: require     # asyncpg: require | prefer | disable
+
+# Job que crea o completa las tablas con files/init.sql en cada instalación (idempotente).
+# Apagado en AWS (la base ya existe); encendido en minikube y Telconet.
+dbSchema:
+  enabled: false
+  image: postgres:16-alpine
 
 redis:
   host: lchai-prod-redis.wgz0ng.0001.use1.cache.amazonaws.com
   port: 6379
+  password: ""          # opcional (ElastiCache sin AUTH); obligatoria con localDeps
 
 s3:
   bucket: lchai-prod-artifacts
   region: us-east-1
   modelsBucket: lchai-prod-models
+  # Vacío = AWS S3. Para MinIO/Ceph: URL del endpoint (debe ser accesible por el navegador)
+  endpoint: ""
 
 acmCertificateArn: "arn:aws:acm:us-east-1:632100838024:certificate/0b8be42a-de6d-4296-ad66-7ded2bf1c263"
 
-environment: development
+# "development" ya no desactiva la autenticación (hace falta AUTH_DEV_BYPASS=true). Usar "production".
+environment: production
 
 keycloak:
-  adminPassword: admin
+  realm: oncology
+  # Obligatoria: pasarla con --set keycloak.adminPassword=... (nunca en el repo)
+  adminPassword: ""
+  image: quay.io/keycloak/keycloak:23.0.7
+  # Modo producción detrás del ingress (TLS termina en el ingress)
+  args: ["start", "--http-enabled=true", "--proxy=edge", "--hostname-strict=false"]
+  # La consola de administración (/admin) y el realm master no se publican por el ingress.
+  # Para administrar: kubectl port-forward svc/keycloak 8080:8080
+  exposeAdmin: false
+  # Usuarios de prueba que se agregan al importar el realm (solo entornos de prueba)
+  demoUsers: []
+  # Importa infra/keycloak/realm-export.json al arrancar (base de datos nueva)
+  importRealm: false
 
 rabbitmq:
+  image: rabbitmq:4.1.8-management-alpine
+  username: lchai
+  password: ""          # obligatoria (--set)
   replicas: 1
   storage: 5Gi
 
 fuseki:
+  image: stain/jena-fuseki@sha256:b1d0c96f19adddef417520184471ac816cf36c6e72936a88ea02b29f4305929a   # 5.1.0
+  adminPassword: ""     # obligatoria (--set)
   storage: 10Gi
 
 inferenceWorker:
+  updateStrategy: ""      # "" = RollingUpdate (AWS). Recreate si hay una sola GPU (Telconet, minikube)
   gpu: true
   modelBackend: local
   maxTilesWsi: 20000
+  # Lista de backbones a descargar (ej. "ctranspath.pth,best_fuzzyarcloss_v2.pth"). Vacío = todos
+  modelFiles: ""
+  resources:
+    requests: { cpu: "2", memory: 4Gi }
+    limits: { cpu: "4", memory: 8Gi }
 
 services:
   gateway:
@@ -60,3 +129,32 @@ services:
     replicas: 1
   activeLearning:
     replicas: 1
+
+# PostgreSQL, Redis y almacenamiento S3 (SeaweedFS) dentro del cluster (minikube u on-premise sin servicios administrados)
+localDeps:
+  enabled: false
+  postgres:
+    image: postgres:16-alpine
+    storage: 5Gi
+  redis:
+    image: redis:7-alpine
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    awsCliImage: amazon/aws-cli:2.17.0
+    storage: 20Gi
+    host: ""          # host público para las URL firmadas (ingress)
+    publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
+
+# Autenticación en el gateway
+auth:
+  jwtIssuer: ""         # vacío = <publicUrl>/realms/<realm> si hay publicUrl
+  jwtAudience: ""       # "oncology-api" cuando el realm tiene el mapper de audiencia
+  corsOrigins: ""       # vacío = sin CORS (la webapp está en el mismo origen)
+
+webapp:
+  cspS3Origin: ""       # vacío = se deduce de s3.endpoint (o AWS S3)
+
+# NetworkPolicies: solo el tráfico necesario entre componentes (requiere un CNI que las aplique)
+networkPolicy:
+  enabled: false
+  ingressNamespace: ingress-nginx

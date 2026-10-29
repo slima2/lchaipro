@@ -1,0 +1,86 @@
+# lchai en Telconet. Guía paso a paso: infra/helm/lchai/README.md
+# Completar los TODO. Las contraseñas NUNCA van en este archivo: se pasan con --set o con un Secret (ver README).
+
+# ── 1. Dominio ────────────────────────────────────────────────────────────────
+# Es el único lugar donde va el dominio. La webapp (imagen portable) toma el dominio del navegador.
+domain: lchai.TODO.telconet.ec         # TODO: dominio que asigne CERT
+publicUrl: ""                          # vacío = https://<domain>. Con puerto: https://lchai.x.ec:8443
+environment: production
+
+# ── 2. Imágenes ───────────────────────────────────────────────────────────────
+# Compilar y subir con: infra/build-images.sh <registro>/<prefijo> sec-20261028 --push
+image:
+  registry: TODO.registry.telconet     # TODO: Harbor o registro de Telconet
+  prefix: lchai
+  tag: sec-20261028                    # imágenes parchadas (rama telconet-portable)
+  pullPolicy: IfNotPresent
+  tags:
+    webapp: portable-20261028          # sin URL fija: sirve para cualquier dominio
+# Registro privado: ver README (sección "Registro privado")
+
+# ── 3. Entrada (proxy) ────────────────────────────────────────────────────────
+# Elegir UNA opción según lo que tenga el cluster:
+#   a) ingress-nginx      -> provider: nginx,   className: nginx   (agrega solas las anotaciones necesarias)
+#   b) Traefik            -> provider: traefik, className: traefik
+#   c) otro controller    -> provider: generic, className: <clase> y sus anotaciones en "annotations"
+#   d) proxy externo de CERT (F5, nginx fuera del cluster) sin Ingress -> provider: none (rutas en el README)
+# Si el TLS lo termina un proxy delante del cluster: tls.enabled: false y publicUrl sigue en https.
+ingress:
+  provider: nginx                      # TODO: confirmar con Gabo
+  className: nginx
+  annotations: {}                      # extra o para sobrescribir las del provider
+  tls:
+    enabled: true
+    secretName: lchai-tls              # Secret TLS de <domain> (lo crea cert-manager o se carga a mano)
+    s3SecretName: lchai-s3-tls         # certificado de s3.<domain> (solo con localDeps)
+    clusterIssuer: ""                  # TODO: p. ej. letsencrypt-prod si hay cert-manager
+
+# ── 4. Datos ──────────────────────────────────────────────────────────────────
+# Opción A (por defecto): todo dentro del cluster (PostgreSQL 16, Redis 7 y S3 con SeaweedFS).
+#   Necesita un segundo nombre DNS, s3.<domain>, que el navegador abre para ver y subir láminas.
+# Opción B: servicios administrados de Telconet -> localDeps.enabled: false y completar host/endpoint.
+localDeps:
+  enabled: true
+  postgres: { storage: 20Gi }
+  s3:
+    storage: 100Gi                     # láminas + resultados (hoy 6 GB vigentes en AWS, crecen con el uso)
+    host: s3.lchai.TODO.telconet.ec    # TODO: s3.<domain>, mismo DNS/IP que <domain>
+
+postgres:
+  host: postgres                       # opción B: host del PostgreSQL 16 administrado
+  sslMode: disable                     # opción B: require
+dbSchema:
+  enabled: true                        # crea o completa las tablas en cada despliegue (idempotente)
+
+redis:
+  host: redis                          # opción B: host del Redis 7
+
+s3:
+  bucket: lchai-prod-artifacts
+  modelsBucket: lchai-prod-models
+  endpoint: ""                         # opción A: vacío (se arma con localDeps.s3.host). Opción B: https://s3.telconet...
+
+storage:
+  className: ""                        # TODO: StorageClass de Telconet ("" = la por defecto)
+
+# ── 5. Keycloak ───────────────────────────────────────────────────────────────
+keycloak:
+  # true = realm nuevo y vacío (sin usuarios: crearlos en la consola).
+  # false = el realm llega con el respaldo de PostgreSQL de AWS; después correr infra/keycloak/harden-realm.sh
+  importRealm: true                    # TODO: false si se migra la base de AWS
+
+auth:
+  jwtAudience: oncology-api            # requiere el mapper de audiencia (incluido en el realm y en harden-realm.sh)
+
+# ── 6. GPU y nodos ────────────────────────────────────────────────────────────
+inferenceWorker:
+  gpu: true                            # requiere el NVIDIA device plugin (recurso nvidia.com/gpu)
+  updateStrategy: Recreate             # con una sola GPU, RollingUpdate deja el pod nuevo en Pending
+nodeSelector:
+  general: null                        # TODO: etiquetas de nodos si aplica
+  gpu: null                            # TODO: p. ej. { nvidia.com/gpu.present: "true" }
+
+# ── 7. Red ────────────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx      # TODO: namespace del ingress controller (traefik: kube-system o traefik)

@@ -22,7 +22,11 @@ async def lifespan(app: FastAPI):
     configure_logging(settings.service_name, settings.log_level)
     if settings.otel_exporter_otlp_endpoint:
         setup_tracing(settings.service_name, settings.otel_exporter_otlp_endpoint)
-    app.state.jwt_validator = JWTValidator(jwks_url=settings.jwks_url)
+    app.state.jwt_validator = JWTValidator(
+        jwks_url=settings.jwks_url,
+        issuer=settings.jwt_issuer or None,
+        audience=settings.jwt_audience or None,
+    )
     yield
 
 
@@ -36,13 +40,25 @@ app = FastAPI(
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(LoggingMiddleware, service_name=settings.service_name)
 app.add_middleware(CorrelationMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 setup_metrics(app)
 instrument_fastapi(app)

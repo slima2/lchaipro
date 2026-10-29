@@ -1,7 +1,9 @@
 import axios from 'axios';
 import keycloak from './auth/keycloak';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ||
+  // Compilada sin URL: mismo dominio desde el que se abre (una sola imagen para cualquier dominio)
+  (import.meta.env.DEV ? 'http://localhost:8000' : window.location.origin);
 
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
@@ -176,7 +178,9 @@ export const getGeneAssociations = () => api.get('/graph/gene-associations');
 // Artifacts — streamed from MinIO via image-service proxy
 export const getArtifactUrl = (uri: string) => {
   const key = uri.replace(/^s3:\/\/[^/]+\//, '');
-  return `${API_URL}/api/v1/artifacts/presigned?key=${encodeURIComponent(key)}`;
+  // Loaded by <img src>/fetch, which cannot send the Authorization header: pass the token in the URL.
+  const token = keycloak.token ? `&access_token=${encodeURIComponent(keycloak.token)}` : '';
+  return `${API_URL}/api/v1/artifacts/presigned?key=${encodeURIComponent(key)}${token}`;
 };
 
 // Active Learning — Pattern Corrections (separate microservice)

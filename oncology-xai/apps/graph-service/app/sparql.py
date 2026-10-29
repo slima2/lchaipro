@@ -63,7 +63,9 @@ async def get_case_subgraph(
         logger.info("Built curated knowledge graph for case %s (dynamic=%s, discovered=%s)", case_id, is_dynamic, has_discovered)
         return {"nodes": list(nodes.values()), "edges": edges, "source": "curated", "source_message": msg}
 
-    # Query case graph from Fuseki
+    # Query case graph from Fuseki (case_id ya validado como UUID en routes; se revalida por seguridad)
+    import uuid as _uuid
+    case_id = str(_uuid.UUID(str(case_id)))
     query = f"""
     SELECT ?s ?p ?o
     WHERE {{

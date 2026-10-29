@@ -266,10 +266,9 @@ export default function ImagePanel({ caseId, imageId: initialImageId, onImageSel
                 const currentJobId = jobId;
                 setJobId(null);
                 try {
-                  const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                  const res = await fetch(`${API}/api/v1/jobs/${currentJobId}:cancel`, { method: 'POST' });
-                  if (res.ok) {
-                    const data = await res.json();
+                  const res = await api.post(`/jobs/${currentJobId}:cancel`, null, { validateStatus: () => true });
+                  if (res.status >= 200 && res.status < 300) {
+                    const data = res.data;
                     if (data.cleaned) {
                       onCaseChanged(caseId);
                     }

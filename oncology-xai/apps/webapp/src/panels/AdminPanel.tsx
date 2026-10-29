@@ -581,7 +581,7 @@ Linear(256→1) → sigmoid → P(mut)`}</pre>
                     <span className="text-blue-600 font-bold">—{r.predicate}→</span>
                     <span className="font-mono text-purple-700">{r.object}</span>
                     <span className="text-gray-400 ml-auto text-[10px]">{r.paper_source}</span>
-                    {r.paper_url && (
+                    {r.paper_url && /^https?:\/\//i.test(r.paper_url) && (
                       <a href={r.paper_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline text-[10px]">
                         paper
                       </a>

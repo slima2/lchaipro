@@ -1,3 +1,4 @@
+{{- if .Values.layers.platform }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,19 +13,27 @@ spec:
       labels:
         app: keycloak
     spec:
-      nodeSelector:
-        workload: general
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:23.0
-          args: ["start-dev", "--proxy=edge", "--hostname-strict=false"]
+          image: {{ .Values.keycloak.image }}
+          args:
+            {{- toYaml .Values.keycloak.args | nindent 12 }}
+            {{- if .Values.keycloak.importRealm }}
+            - --import-realm
+            {{- end }}
           ports:
             - containerPort: 8080
           env:
             - name: KEYCLOAK_ADMIN
               value: admin
             - name: KEYCLOAK_ADMIN_PASSWORD
-              value: {{ .Values.keycloak.adminPassword | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: lchai-secrets
+                  key: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_HEALTH_ENABLED
+              value: "true"
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL
@@ -38,6 +47,31 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: KC_PROXY
               value: edge
+            {{- with include "lchai.effectivePublicUrl" . }}
+            # URL pública fija: si no, Keycloak la arma con el puerto que le informa el ingress
+            - name: KC_HOSTNAME_URL
+              value: {{ . | quote }}
+            - name: KC_HOSTNAME_ADMIN_URL
+              value: {{ . | quote }}
+            {{- end }}
+          # Sin probes el pod figura listo antes de atender y el login da 502 mientras arranca.
+          # La primera vez crea el esquema e importa el realm: puede tardar varios minutos.
+          startupProbe:
+            httpGet: { path: /health/started, port: 8080 }
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 8080 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/live, port: 8080 }
+            periodSeconds: 20
+            failureThreshold: 6
+          {{- if .Values.keycloak.importRealm }}
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+          {{- end }}
           resources:
             requests:
               cpu: 500m
@@ -45,6 +79,12 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
+      {{- if .Values.keycloak.importRealm }}
+      volumes:
+        - name: realm
+          configMap:
+            name: lchai-keycloak-realm
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -56,3 +96,4 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+{{- end }}

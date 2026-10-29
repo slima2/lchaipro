@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
 from sqlalchemy import create_engine
@@ -44,13 +45,25 @@ def _persist_event(envelope: EventEnvelope) -> None:
 
 
 def start_consumer() -> None:
-    """Start blocking audit consumer."""
-    consumer = BaseConsumer(
-        rabbitmq_url=settings.rabbitmq_url,
-        queue_name="audit-events",
-    )
-    consumer.on("#", _persist_event)  # listen to all events
-    consumer.start(binding_keys=["#"])
+    """Start blocking audit consumer, reconnecting if RabbitMQ is down or restarts.
+
+    Without the retry loop the thread died for good when RabbitMQ was not ready at startup,
+    and audit events were silently lost while the service still reported healthy.
+    """
+    delay = 2
+    while True:
+        consumer = BaseConsumer(
+            rabbitmq_url=settings.rabbitmq_url,
+            queue_name="audit-events",
+        )
+        consumer.on("#", _persist_event)  # listen to all events
+        try:
+            consumer.start(binding_keys=["#"])
+            delay = 2
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Audit consumer disconnected (%s); retrying in %ss", exc, delay)
+        time.sleep(delay)
+        delay = min(delay * 2, 60)
 
 
 if __name__ == "__main__":

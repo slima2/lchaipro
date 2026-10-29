@@ -1,0 +1,68 @@
+{{- /*
+Crea o completa el esquema de la base de datos con files/init.sql (idempotente: IF NOT EXISTS).
+Los servicios no crean sus tablas ni corren Alembic al arrancar, así que sin esto una base nueva
+(PostgreSQL administrado o localDeps) queda incompleta. Corre en cada instalación o upgrade.
+*/ -}}
+{{- if and .Values.dbSchema.enabled .Values.layers.platform }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lchai-db-schema
+data:
+  init.sql: |
+{{ .Files.Get "files/init.sql" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Un nombre por revisión: no es un hook, para no bloquear helm --wait
+  name: db-schema-{{ .Release.Revision }}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app: db-schema
+    spec:
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: {{ .Values.dbSchema.image }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -q; do echo "esperando a PostgreSQL en $PGHOST:$PGPORT..."; sleep 5; done
+              psql -v ON_ERROR_STOP=1 -q -f /sql/init.sql
+              echo "esquema al día: $(psql -Atc "select count(*) from information_schema.tables where table_schema='public'") tablas"
+          env:
+            - name: PGHOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgres.database | quote }}
+            - name: PGUSER
+              value: {{ .Values.postgres.username | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lchai-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGOPTIONS
+              value: "-c client_min_messages=warning"   # sin los avisos de "ya existe"
+            - name: PGSSLMODE
+              value: {{ .Values.postgres.sslMode | default "prefer" | quote }}
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: sql
+          configMap:
+            name: lchai-db-schema
+{{- end }}

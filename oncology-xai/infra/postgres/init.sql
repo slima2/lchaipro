@@ -299,3 +299,80 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp ON audit_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_events_correlation ON audit_events(correlation_id);
 CREATE INDEX IF NOT EXISTS idx_audit_events_case_id ON audit_events(case_id);
+
+-- ============================================================
+-- Tablas y columnas que agregaron los servicios después del esquema inicial
+-- (migraciones Alembic 002-004 de inference-service, active-learning-service y DeepSearch).
+-- Sin esto, en una base nueva el análisis falla al guardar el resultado. Idempotente.
+-- ============================================================
+
+-- active-learning-service
+CREATE TABLE IF NOT EXISTS model_versions (
+	id VARCHAR(36) NOT NULL,
+	version_tag VARCHAR(100) NOT NULL,
+	pth_uri VARCHAR(1024) NOT NULL,
+	parent_version VARCHAR(100),
+	corrections_count INTEGER NOT NULL,
+	slide_id VARCHAR(200),
+	notes TEXT,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (version_tag)
+);
+CREATE TABLE IF NOT EXISTS pattern_corrections (
+	id VARCHAR(36) NOT NULL,
+	result_bundle_id VARCHAR(36) NOT NULL,
+	case_id VARCHAR(36) NOT NULL,
+	image_id VARCHAR(36) NOT NULL,
+	tile_index INTEGER NOT NULL,
+	tile_x FLOAT NOT NULL,
+	tile_y FLOAT NOT NULL,
+	original_pattern VARCHAR(50) NOT NULL,
+	corrected_pattern VARCHAR(50) NOT NULL,
+	corrected_by VARCHAR(100) NOT NULL,
+	model_version_before VARCHAR(100),
+	model_version_after VARCHAR(100),
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS ix_pattern_corrections_result_bundle_id ON pattern_corrections (result_bundle_id);
+CREATE INDEX IF NOT EXISTS ix_pattern_corrections_case_id ON pattern_corrections (case_id);
+-- ontology-admin-service
+CREATE TABLE IF NOT EXISTS discovered_relations (
+	id VARCHAR(36) NOT NULL,
+	job_id VARCHAR(36) NOT NULL,
+	subject VARCHAR(200) NOT NULL,
+	predicate VARCHAR(100) NOT NULL,
+	object VARCHAR(200) NOT NULL,
+	subject_iri VARCHAR(500),
+	object_iri VARCHAR(500),
+	subject_type VARCHAR(30),
+	object_type VARCHAR(30),
+	evidence_quote TEXT,
+	paper_source VARCHAR(50),
+	paper_id VARCHAR(200),
+	paper_title TEXT,
+	paper_url VARCHAR(500),
+	confidence VARCHAR(20) NOT NULL,
+	is_active BOOLEAN NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS ix_discovered_relations_job_id ON discovered_relations (job_id);
+-- inference-service
+ALTER TABLE result_bundles ADD COLUMN IF NOT EXISTS pipeline_version VARCHAR(20) DEFAULT '2.0.0';
+ALTER TABLE result_bundles ADD COLUMN IF NOT EXISTS use_choquet BOOLEAN DEFAULT true;
+ALTER TABLE result_bundles ADD COLUMN IF NOT EXISTS attention_overlay_uri VARCHAR(1024);
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS confidence_label VARCHAR(20);
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS auroc_threshold FLOAT;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS prediction_method VARCHAR(20);
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS disclaimer TEXT;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS shap_embedding_pct FLOAT;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS shap_pattern_pct FLOAT;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS shap_top_patterns JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS shap_pattern_signed JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS shap_pattern_directions JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS choquet_shapley_values JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS choquet_interaction_indices JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS ablation_data JSON;
+ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS permutation_data JSON;

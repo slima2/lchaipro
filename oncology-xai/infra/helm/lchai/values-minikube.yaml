@@ -1,0 +1,82 @@
+# lchai en minikube: todo menos GPU. Ver infra/minikube/README.md
+# Acceso: kubectl port-forward al ingress en el puerto 8080 -> http://lchai.localhost:8080
+domain: lchai.localhost
+publicUrl: http://lchai.localhost:8080
+environment: production
+
+image:
+  # Imágenes parchadas compiladas desde el código fuente dentro de minikube (ver infra/minikube/README.md)
+  pullPolicy: Never
+  tag: sec-20261028
+  tags:
+    webapp: portable-20261028   # compilada sin URL: sirve para cualquier dominio
+
+nodeSelector:
+  general: null
+  gpu: null
+storage:
+  className: ""              # "standard" de minikube
+
+ingress:
+  provider: nginx            # agrega solas las anotaciones que lchai necesita (subidas, búfer de Keycloak, tiempos)
+  className: nginx
+
+postgres:
+  host: postgres
+  sslMode: disable
+  password: lchai-local-db   # solo local
+dbSchema:
+  enabled: true
+
+redis:
+  host: redis
+  password: Redis-Local-2026   # solo local
+
+s3:
+  bucket: lchai-prod-artifacts
+  modelsBucket: lchai-prod-models
+  accessKey: lchai-local
+  secretKey: lchai-local-secret
+
+keycloak:
+  adminPassword: Lchai-Admin-Local-2026!     # solo local
+  importRealm: true
+  # Usuarios de prueba (cumplen la política: 12+ caracteres, mayúscula, número y símbolo)
+  demoUsers:
+    - { username: clinician1, password: Clinico-Local-2026, roles: [clinician] }
+    - { username: admin1, password: Admin-Local-2026x, roles: [admin, clinician] }
+    - { username: auditor1, password: Auditor-Local-2026, roles: [auditor] }
+
+rabbitmq:
+  password: Rabbit-Local-2026   # solo local
+  storage: 1Gi
+fuseki:
+  adminPassword: Fuseki-Local-2026   # solo local
+  storage: 2Gi
+
+inferenceWorker:
+  gpu: false
+  updateStrategy: Recreate             # con una sola GPU, RollingUpdate deja el pod nuevo en Pending
+  maxTilesWsi: 300            # pocos cuadritos para que en CPU tarde minutos
+  modelFiles: "ctranspath.pth,best_fuzzyarcloss_v2.pth"
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { cpu: "3", memory: 5Gi }
+
+services:
+  gateway: { replicas: 1 }
+  webapp: { replicas: 1 }
+
+localDeps:
+  enabled: true
+  postgres: { storage: 3Gi }
+  s3:
+    storage: 8Gi
+    host: s3.lchai.localhost
+    publicPort: 8080
+
+auth:
+  jwtAudience: oncology-api
+
+networkPolicy:
+  enabled: true   # el CNI por defecto de minikube no las aplica; se validan con Calico (ver README)

@@ -10,8 +10,16 @@ from oncology_common.auth.jwt import JWTValidator, TokenPayload
 
 security = HTTPBearer(auto_error=False)
 
-# Dev-mode auth bypass: when ENVIRONMENT=development, skip JWT validation
-_DEV_MODE = os.getenv("ENVIRONMENT", "").lower() == "development"
+# Dev-mode auth bypass: only when explicitly requested with AUTH_DEV_BYPASS=true AND
+# ENVIRONMENT=development. ENVIRONMENT=development alone no longer disables authentication.
+_DEV_MODE = (
+    os.getenv("ENVIRONMENT", "").lower() == "development"
+    and os.getenv("AUTH_DEV_BYPASS", "").lower() == "true"
+)
+
+# Endpoints loaded by the browser through <img src>/fetch without an Authorization header:
+# they may carry the access token in the "access_token" query parameter instead.
+_QUERY_TOKEN_PATHS = ("/artifacts/presigned",)
 
 _DEV_USER = TokenPayload(
     sub="dev-user",
@@ -32,6 +40,11 @@ async def get_current_user(
     if _DEV_MODE:
         request.state.user = _DEV_USER
         return _DEV_USER
+
+    if not credentials and request.method == "GET" and request.url.path.endswith(_QUERY_TOKEN_PATHS):
+        query_token = request.query_params.get("access_token")
+        if query_token:
+            credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=query_token)
 
     if not credentials:
         raise HTTPException(

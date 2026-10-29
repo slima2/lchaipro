@@ -1,0 +1,91 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /* Por defecto se niega todo el tráfico entrante y se permite solo lo necesario (S-09) */ -}}
+{{- $ing := .Values.networkPolicy.ingressNamespace -}}
+{{- $appSvcs := list "case-service" "image-service" "inference-service" "ehr-service" "graph-service" "ontology-admin-service" "audit-service" "active-learning-service" -}}
+{{- $backends := concat $appSvcs (list "inference-worker" "keycloak" "s3-buckets" "db-schema") -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Desde el ingress controller: webapp, gateway, Keycloak y S3 público
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [webapp, api-gateway, keycloak, s3] }
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ing }}
+---
+# Microservicios: solo el gateway los llama
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-services
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: {{ toJson $appSvcs }} }
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: api-gateway } }
+---
+# active-learning llama a inference-service directamente
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-active-learning-to-inference
+spec:
+  podSelector: { matchLabels: { app: inference-service } }
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: active-learning-service } }
+---
+# Keycloak: el gateway (JWKS)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-keycloak
+spec:
+  podSelector: { matchLabels: { app: keycloak } }
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: api-gateway } }
+---
+# Datos: PostgreSQL, Redis, RabbitMQ y S3 desde los servicios
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-data
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app, operator: In, values: [postgres, redis, rabbitmq, s3] }
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: {{ toJson $backends }} }
+---
+# Fuseki: solo los servicios que usan la ontología
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-fuseki
+spec:
+  podSelector: { matchLabels: { app: fuseki } }
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [graph-service, ontology-admin-service, ehr-service] }
+{{- end }}

@@ -1620,8 +1620,7 @@ export default function AnalysisPanel({
                 const currentJobId = jobId;
                 setJobId(null);
                 try {
-                  const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                  await fetch(`${API}/api/v1/jobs/${currentJobId}:cancel`, { method: 'POST' });
+                  await api.post(`/jobs/${currentJobId}:cancel`);
                 } catch { /* best effort */ }
                 onCaseChanged(caseId);
                 images.refetch();

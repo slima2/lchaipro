@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWK, PyJWTError
 from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -81,7 +82,7 @@ class JWTValidator:
             header = jwt.get_unverified_header(token)
             kid = header.get("kid")
             if not kid:
-                raise JWTError("Missing kid")
+                raise PyJWTError("Missing kid")
 
             jwks = await self.get_jwks()
             key = self._find_key(jwks, kid)
@@ -90,10 +91,10 @@ class JWTValidator:
                 jwks = await self.get_jwks()
                 key = self._find_key(jwks, kid)
                 if not key:
-                    raise JWTError(f"Key not found: {kid}")
+                    raise PyJWTError(f"Key not found: {kid}")
 
             payload = jwt.decode(
-                token, key, algorithms=["RS256"],
+                token, PyJWK(key, algorithm="RS256").key, algorithms=["RS256"],
                 audience=self.audience, issuer=self.issuer,
                 options={
                     "verify_aud": self.audience is not None,
@@ -118,7 +119,7 @@ class JWTValidator:
                 preferred_username=payload.get("preferred_username"),
                 name=payload.get("name"),
             )
-        except JWTError as e:
+        except PyJWTError as e:
             raise ValueError(f"Invalid token: {e}") from e
         except Exception as e:
             raise ValueError(f"Token validation failed: {e}") from e

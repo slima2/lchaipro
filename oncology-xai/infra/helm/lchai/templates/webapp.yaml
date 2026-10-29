@@ -1,3 +1,4 @@
+{{- if .Values.layers.app }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,14 +13,16 @@ spec:
       labels:
         app: webapp
     spec:
-      nodeSelector:
-        workload: general
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: webapp
-          image: {{ .Values.image.registry }}/{{ .Values.image.prefix }}/webapp:{{ .Values.image.tag }}
+          image: {{ include "lchai.svcImage" (dict "root" $ "svc" "webapp") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 3000
           env:
+            - name: CSP_S3_ORIGIN
+              value: {{ .Values.webapp.cspS3Origin | default (ternary (regexFind "^https?://[^/]+" (include "lchai.s3Endpoint" .)) (printf "https://*.s3.amazonaws.com https://s3.%s.amazonaws.com" .Values.s3.region) (not (empty (include "lchai.s3Endpoint" .)))) | quote }}
             - name: VITE_API_URL
               value: "https://{{ .Values.domain }}"
             - name: VITE_KEYCLOAK_URL
@@ -46,3 +49,4 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
+{{- end }}

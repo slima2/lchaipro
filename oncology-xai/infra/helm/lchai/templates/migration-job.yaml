@@ -1,2 +1,0 @@
-# Migrations run inside each service on startup via alembic
-# To run manually: kubectl exec deploy/<service> -- alembic upgrade head

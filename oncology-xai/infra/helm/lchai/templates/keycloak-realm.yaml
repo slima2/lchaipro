@@ -1,0 +1,23 @@
+{{- if .Values.layers.platform }}
+{{- if .Values.keycloak.importRealm }}
+{{- /* Realm "oncology" del repositorio, agregando la URL pública a los clientes de la webapp */ -}}
+{{- $url := .Values.publicUrl | default (printf "https://%s" .Values.domain) -}}
+{{- $realm := .Files.Get "files/realm-export.json" -}}
+{{- $realm = replace "\"http://localhost:3000/*\"" (printf "\"http://localhost:3000/*\", \"%s/*\"" $url) $realm -}}
+{{- $realm = replace "\"http://localhost:3000\"" (printf "\"http://localhost:3000\", \"%s\"" $url) $realm -}}
+{{- with .Values.keycloak.demoUsers }}
+{{- $users := list }}
+{{- range . }}
+{{- $users = append $users (dict "username" .username "enabled" true "emailVerified" true "email" (printf "%s@lchai.local" .username) "firstName" .username "lastName" "Prueba" "realmRoles" .roles "credentials" (list (dict "type" "password" "value" .password "temporary" false))) }}
+{{- end }}
+{{- $realm = (merge (dict "users" $users) ($realm | fromJson)) | toPrettyJson }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lchai-keycloak-realm
+data:
+  realm-export.json: |
+{{ $realm | indent 4 }}
+{{- end }}
+{{- end }}

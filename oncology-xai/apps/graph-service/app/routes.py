@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -173,6 +173,14 @@ async def get_gene_associations(db: AsyncSession = Depends(get_db)):
     }
 
 
+def _require_uuid(case_id: str) -> str:
+    """case_id se usa dentro de consultas SPARQL: solo se aceptan UUID."""
+    try:
+        return str(UUID(case_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid case_id")
+
+
 @router.get("/cases/{case_id}/graph")
 async def get_graph(
     case_id: str,
@@ -180,6 +188,7 @@ async def get_graph(
     include_inferred: bool = Query(True, alias="includeInferred"),
     db: AsyncSession = Depends(get_db),
 ):
+    case_id = _require_uuid(case_id)
     """Get graph for a case (from latest snapshot or live SPARQL)."""
     # Try latest snapshot
     stmt = (
@@ -230,6 +239,7 @@ async def rebuild_graph(
     from_ontology: bool = Query(True, alias="fromOntology"),
     db: AsyncSession = Depends(get_db),
 ):
+    case_id = _require_uuid(case_id)
     """Rebuild graph snapshot from case results + discovered relations. Dynamic case-specific graph."""
     # Fetch real results for this case
     pattern_results, genetic_results = await _fetch_case_results(db, case_id)
@@ -283,6 +293,7 @@ async def explain_graph(
     include_inferred: bool = Query(True, alias="includeInferred"),
     db: AsyncSession = Depends(get_db),
 ):
+    case_id = _require_uuid(case_id)
     """Generate natural language explanation of the case graph via LLM."""
     language = (body or {}).get("language", "en")
     # Fetch graph (same logic as get_graph)

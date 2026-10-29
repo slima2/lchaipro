@@ -1,3 +1,4 @@
+{{- if .Values.layers.app }}
 {{- $services := list
   (dict "name" "api-gateway" "port" 8000 "replicas" .Values.services.gateway.replicas)
   (dict "name" "case-service" "port" 8001 "replicas" .Values.services.caseService.replicas)
@@ -7,7 +8,7 @@
   (dict "name" "graph-service" "port" 8005 "replicas" .Values.services.graphService.replicas)
   (dict "name" "ontology-admin-service" "port" 8006 "replicas" .Values.services.ontologyAdmin.replicas)
   (dict "name" "audit-service" "port" 8007 "replicas" .Values.services.auditService.replicas)
-  (dict "name" "active-learning-service" "port" 8008 "replicas" .Values.services.activeLearning.replicas)
+  (dict "name" "active-learning-service" "port" 8008 "replicas" .Values.services.activeLearning.replicas "probe" "/health")
 }}
 {{- range $svc := $services }}
 ---
@@ -22,14 +23,16 @@ spec:
       app: {{ $svc.name }}
   template:
     metadata:
+      annotations:
+        {{- include "lchai.configChecksum" $ | nindent 8 }}
       labels:
         app: {{ $svc.name }}
     spec:
-      nodeSelector:
-        workload: general
+      {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: {{ $svc.name }}
-          image: {{ $.Values.image.registry }}/{{ $.Values.image.prefix }}/{{ $svc.name }}:{{ $.Values.image.tag }}
+          image: {{ include "lchai.svcImage" (dict "root" $ "svc" $svc.name) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           ports:
             - containerPort: {{ $svc.port }}
           envFrom:
@@ -46,7 +49,7 @@ spec:
               memory: 1Gi
           readinessProbe:
             httpGet:
-              path: /metrics
+              path: {{ $svc.probe | default "/metrics" }}
               port: {{ $svc.port }}
             initialDelaySeconds: 10
             periodSeconds: 15
@@ -61,4 +64,5 @@ spec:
   ports:
     - port: {{ $svc.port }}
       targetPort: {{ $svc.port }}
+{{- end }}
 {{- end }}

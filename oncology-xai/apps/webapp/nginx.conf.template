@@ -1,0 +1,36 @@
+# Plantilla de nginx para la webapp. La imagen oficial de nginx la procesa con envsubst al arrancar
+# (/etc/nginx/templates -> /etc/nginx/conf.d). Solo se sustituyen variables de entorno definidas,
+# así que las variables propias de nginx ($uri, etc.) quedan intactas.
+#   CSP_S3_ORIGIN: origen del almacenamiento S3 al que el navegador sube y del que descarga (URL firmadas).
+
+server {
+    listen 3000;
+    server_tokens off;
+    root /usr/share/nginx/html;
+
+    # Cabeceras de seguridad (se repiten en cada location porque add_header no se hereda si el location define alguna)
+    set $csp "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${CSP_S3_ORIGIN}; connect-src 'self' ${CSP_S3_ORIGIN}; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Content-Security-Policy $csp always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Content-Security-Policy $csp always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        try_files $uri /index.html;
+    }
+}

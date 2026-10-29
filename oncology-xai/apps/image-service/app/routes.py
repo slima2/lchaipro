@@ -361,7 +361,8 @@ async def get_artifact_presigned(key: str = Query(...)):
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+                 "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'"},  # datos clínicos
     )
 
 

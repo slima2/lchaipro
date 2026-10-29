@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
@@ -12,9 +13,14 @@ from fastapi import APIRouter, Depends, Request, Response
 from oncology_common.auth.dependencies import get_current_user, require_roles
 from oncology_common.auth.jwt import TokenPayload
 
-_DEV_MODE = os.getenv("ENVIRONMENT", "").lower() == "development"
+_DEV_MODE = (
+    os.getenv("ENVIRONMENT", "").lower() == "development"
+    and os.getenv("AUTH_DEV_BYPASS", "").lower() == "true"
+)
 
 logger = logging.getLogger(__name__)
+
+_CLIENT_FORBIDDEN_HEADERS = {"host", "x-user-id", "x-correlation-id", "x-forwarded-user", "x-roles"}
 
 # Route → upstream + required roles
 ROUTE_MAP: list[dict[str, Any]] = [
@@ -34,6 +40,8 @@ ROUTE_MAP: list[dict[str, Any]] = [
     {"prefix": "/ehr", "upstream": "ehr_service_url", "roles": ["clinician", "admin"]},
     # Graph service
     {"prefix": "/graphs", "upstream": "graph_service_url", "roles": ["clinician", "admin"]},
+    # The webapp calls /graph/gene-associations; without this prefix the gateway returned 404
+    {"prefix": "/graph", "upstream": "graph_service_url", "roles": ["clinician", "admin"]},
     # Ontology Admin + DeepSearch + KG
     {"prefix": "/admin/ontologies", "upstream": "ontology_admin_service_url", "roles": ["admin"]},
     {"prefix": "/admin/deep-search", "upstream": "ontology_admin_service_url", "roles": ["admin"]},
@@ -51,12 +59,21 @@ def create_proxy_router(settings) -> APIRouter:  # type: ignore[no-untyped-def]
     async def _proxy(request: Request, upstream_base: str) -> Response:
         """Forward request to upstream, preserving headers."""
         path = request.url.path.replace("/api/v1", "", 1)
+        # No permitir recorrer rutas dentro del servicio interno (p. ej. /ehr/../../docs)
+        if ".." in path.split("/") or "%2e%2e" in request.url.path.lower():
+            return Response(status_code=400, content=b'{"detail":"Invalid path"}', media_type="application/json")
         url = f"{upstream_base}/api/v1{path}"
-        if request.url.query:
-            url += f"?{request.url.query}"
+        # The access token may arrive as a query parameter (artifact URLs); never forward it upstream.
+        query = urlencode([(k, v) for k, v in request.query_params.multi_items() if k != "access_token"])
+        if query:
+            url += f"?{query}"
 
-        headers = dict(request.headers)
-        headers.pop("host", None)
+        # Cabeceras de identidad y trazas las pone solo el gateway: se descartan las que envía el cliente
+        # (comparación sin distinguir mayúsculas; si no, httpx reenvía las dos y el servicio lee la del cliente).
+        headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() not in _CLIENT_FORBIDDEN_HEADERS and not k.lower().startswith("x-user")
+        }
         cid = getattr(request.state, "correlation_id", None)
         if cid:
             headers["X-Correlation-Id"] = cid

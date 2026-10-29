@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     keycloak_url: str = "http://keycloak:8080"
     keycloak_realm: str = "oncology"
     jwks_url: str = "http://keycloak:8080/realms/oncology/protocol/openid-connect/certs"
+    # Validación estricta del token (vacío = no se valida ese campo)
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
+    # Orígenes permitidos por CORS, separados por coma (vacío = sin CORS; la webapp está en el mismo origen)
+    cors_origins: str = ""
 
     # Downstream services
     case_service_url: str = "http://case-service:8001"
