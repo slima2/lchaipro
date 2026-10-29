@@ -3,7 +3,6 @@ Seed LCHAI v1.2 database from cohortMAF Excel file.
 Loads patients with histologic patterns and their genetic mutations.
 """
 
-import sys
 import uuid
 import math
 from datetime import datetime, timezone
@@ -20,9 +19,26 @@ DB_DSN = "postgresql://oncology:oncology_secret@localhost:5432/oncology_xai"
 
 # Key mutations of interest for lung cancer
 KEY_MUTATIONS = {
-    "TP53", "KRAS", "EGFR", "ALK", "STK11", "KEAP1", "NF1", "BRAF",
-    "PIK3CA", "MET", "ROS1", "RET", "ERBB2", "NRAS", "MAP2K1",
-    "SMARCA4", "RB1", "CDKN2A", "ARID1A", "NOTCH1",
+    "TP53",
+    "KRAS",
+    "EGFR",
+    "ALK",
+    "STK11",
+    "KEAP1",
+    "NF1",
+    "BRAF",
+    "PIK3CA",
+    "MET",
+    "ROS1",
+    "RET",
+    "ERBB2",
+    "NRAS",
+    "MAP2K1",
+    "SMARCA4",
+    "RB1",
+    "CDKN2A",
+    "ARID1A",
+    "NOTCH1",
 }
 
 PATTERN_THRESHOLD = 0.55  # from .env
@@ -49,12 +65,25 @@ def main():
     # ── 1. Read Excel ──────────────────────────────────────────────
     print("\n[1/5] Reading Excel file...")
     cols_needed = [
-        "Hugo_Symbol", "Variant_Classification", "Tumor_Sample_Barcode",
-        "case_barcode", "Chromosome", "Start_Position",
-        "n_tiles_total", "n_acinar", "pct_acinar",
-        "n_lepidic", "pct_lepidic", "n_micropapillary", "pct_micropapillary",
-        "n_mucinous", "pct_mucinous", "n_papillary", "pct_papillary",
-        "n_solid", "pct_solid",
+        "Hugo_Symbol",
+        "Variant_Classification",
+        "Tumor_Sample_Barcode",
+        "case_barcode",
+        "Chromosome",
+        "Start_Position",
+        "n_tiles_total",
+        "n_acinar",
+        "pct_acinar",
+        "n_lepidic",
+        "pct_lepidic",
+        "n_micropapillary",
+        "pct_micropapillary",
+        "n_mucinous",
+        "pct_mucinous",
+        "n_papillary",
+        "pct_papillary",
+        "n_solid",
+        "pct_solid",
     ]
     df = pd.read_excel(EXCEL_PATH, usecols=cols_needed)
     print(f"  Loaded {len(df)} rows, {df['case_barcode'].nunique()} unique patients")
@@ -67,7 +96,9 @@ def main():
     # Also include patients without patterns (but fewer details)
     all_patients = df["case_barcode"].unique()
     patients_without_patterns = set(all_patients) - set(patients_with_patterns)
-    print(f"  {len(patients_without_patterns)} patients without patterns (will create basic records)")
+    print(
+        f"  {len(patients_without_patterns)} patients without patterns (will create basic records)"
+    )
 
     # ── 3. Create patients and cases via REST API ──────────────────
     print("\n[2/5] Creating patients and cases via case-service API...")
@@ -86,21 +117,26 @@ def main():
         key_muts = [g for g in patient_mutations if g in KEY_MUTATIONS]
 
         # Create patient
-        resp = requests.post(f"{CASE_SERVICE_URL}/api/v1/patients", json={
-            "external_id": barcode,
-            "demographics": {
-                "tcga_barcode": barcode,
-                "tumor_sample_barcode": tumor_barcode,
-                "source": "TCGA-LUAD",
-                "total_mutations": len(patient_mutations),
-                "key_mutations": key_muts,
+        resp = requests.post(
+            f"{CASE_SERVICE_URL}/api/v1/patients",
+            json={
+                "external_id": barcode,
+                "demographics": {
+                    "tcga_barcode": barcode,
+                    "tumor_sample_barcode": tumor_barcode,
+                    "source": "TCGA-LUAD",
+                    "total_mutations": len(patient_mutations),
+                    "key_mutations": key_muts,
+                },
             },
-        })
+        )
         if resp.status_code == 201:
             patient_id = resp.json()["patient_id"]
         elif resp.status_code == 500 and "unique" in resp.text.lower():
             # Patient already exists, find it
-            search = requests.get(f"{CASE_SERVICE_URL}/api/v1/patients", params={"query": barcode})
+            search = requests.get(
+                f"{CASE_SERVICE_URL}/api/v1/patients", params={"query": barcode}
+            )
             existing = [p for p in search.json() if p["external_id"] == barcode]
             if existing:
                 patient_id = existing[0]["patient_id"]
@@ -108,18 +144,23 @@ def main():
                 print(f"  WARNING: Could not create or find patient {barcode}")
                 continue
         else:
-            print(f"  WARNING: Failed to create patient {barcode}: {resp.status_code} {resp.text[:200]}")
+            print(
+                f"  WARNING: Failed to create patient {barcode}: {resp.status_code} {resp.text[:200]}"
+            )
             continue
 
         # Create case
-        resp = requests.post(f"{CASE_SERVICE_URL}/api/v1/cases", json={
-            "patient_id": patient_id,
-            "tags": ["TCGA-LUAD", "seed"],
-            "metadata": {
-                "source": "cohortMAF_dec2025",
-                "tumor_sample_barcode": tumor_barcode,
+        resp = requests.post(
+            f"{CASE_SERVICE_URL}/api/v1/cases",
+            json={
+                "patient_id": patient_id,
+                "tags": ["TCGA-LUAD", "seed"],
+                "metadata": {
+                    "source": "cohortMAF_dec2025",
+                    "tumor_sample_barcode": tumor_barcode,
+                },
             },
-        })
+        )
         if resp.status_code == 201:
             case_id = resp.json()["case_id"]
         else:
@@ -182,116 +223,170 @@ def main():
         now = datetime.now(timezone.utc)
 
         # Insert dummy image record
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO images (id, case_id, format, storage_uri, checksum, size_bytes,
                                 stain, magnification, notes, uploaded_by, uploaded_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            image_id, case_id, "svs",
-            f"s3://oncology-xai/images/{barcode}/slide.svs",
-            "seed_" + uuid.uuid4().hex[:56],
-            0,
-            "H&E", "20x",
-            f"TCGA-LUAD slide for {barcode} (seeded from cohortMAF)",
-            "seed_script", now,
-        ))
+        """,
+            (
+                image_id,
+                case_id,
+                "svs",
+                f"s3://oncology-xai/images/{barcode}/slide.svs",
+                "seed_" + uuid.uuid4().hex[:56],
+                0,
+                "H&E",
+                "20x",
+                f"TCGA-LUAD slide for {barcode} (seeded from cohortMAF)",
+                "seed_script",
+                now,
+            ),
+        )
 
         # Insert ML job (completed)
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO ml_jobs (id, case_id, image_id, job_type, status, progress,
                                  result_bundle_id, started_at, ended_at, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            job_id, case_id, image_id, "IMAGE_INFERENCE", "COMPLETED", 1.0,
-            bundle_id, now, now, now,
-        ))
+        """,
+            (
+                job_id,
+                case_id,
+                image_id,
+                "IMAGE_INFERENCE",
+                "COMPLETED",
+                1.0,
+                bundle_id,
+                now,
+                now,
+                now,
+            ),
+        )
 
         # Insert result bundle
         pattern_composition = {k: round(v * 100, 2) for k, v in patterns.items()}
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO result_bundles (id, case_id, image_id, job_id, model_profile,
                                         model_version, thresholds, pattern_composition,
                                         predominant_pattern, summary_json,
                                         evidence_source, intended_use, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            bundle_id, case_id, image_id, job_id,
-            "CTransPath+FuzzyArcLoss_v3", "1.0.0-seed",
-            psycopg2.extras.Json({"pattern": PATTERN_THRESHOLD, "mutation": 0.60}),
-            psycopg2.extras.Json(pattern_composition),
-            predominant,
-            psycopg2.extras.Json({
-                "source": "TCGA-LUAD cohortMAF",
-                "tcga_barcode": barcode,
-                "n_tiles_total": n_tiles,
-                "total_mutations_detected": len(mutations),
-                "key_mutations_detected": key_muts,
-            }),
-            "THESIS_INTERNAL",
-            "research / decision support (non-diagnostic)",
-            now,
-        ))
+        """,
+            (
+                bundle_id,
+                case_id,
+                image_id,
+                job_id,
+                "CTransPath+FuzzyArcLoss_v3",
+                "1.0.0-seed",
+                psycopg2.extras.Json({"pattern": PATTERN_THRESHOLD, "mutation": 0.60}),
+                psycopg2.extras.Json(pattern_composition),
+                predominant,
+                psycopg2.extras.Json(
+                    {
+                        "source": "TCGA-LUAD cohortMAF",
+                        "tcga_barcode": barcode,
+                        "n_tiles_total": n_tiles,
+                        "total_mutations_detected": len(mutations),
+                        "key_mutations_detected": key_muts,
+                    }
+                ),
+                "THESIS_INTERNAL",
+                "research / decision support (non-diagnostic)",
+                now,
+            ),
+        )
 
         # Insert pattern results
         for pattern_name, pct_val in patterns.items():
-            n_val = safe_int(pat_row.get(f"n_{pattern_name}", 0))
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO pattern_results (id, result_bundle_id, pattern, score,
                                              percentage, is_conclusive, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (
-                str(uuid.uuid4()), bundle_id, pattern_name,
-                pct_val, round(pct_val * 100, 4),
-                pct_val >= PATTERN_THRESHOLD,
-                now,
-            ))
+            """,
+                (
+                    str(uuid.uuid4()),
+                    bundle_id,
+                    pattern_name,
+                    pct_val,
+                    round(pct_val * 100, 4),
+                    pct_val >= PATTERN_THRESHOLD,
+                    now,
+                ),
+            )
 
         # Insert genetic results (key mutations found in this patient)
         for gene in key_muts:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO genetic_results (id, result_bundle_id, mutation, score,
                                              status, evidence_source, intended_use, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                str(uuid.uuid4()), bundle_id, gene,
-                0.95,  # high confidence since these are confirmed TCGA mutations
-                "POSITIVE",
-                "TCGA_MAF",
-                "research / decision support (non-diagnostic)",
-                now,
-            ))
+            """,
+                (
+                    str(uuid.uuid4()),
+                    bundle_id,
+                    gene,
+                    0.95,  # high confidence since these are confirmed TCGA mutations
+                    "POSITIVE",
+                    "TCGA_MAF",
+                    "research / decision support (non-diagnostic)",
+                    now,
+                ),
+            )
 
         # Also add negative results for key mutations NOT found
-        for gene in (KEY_MUTATIONS - set(key_muts)):
-            cur.execute("""
+        for gene in KEY_MUTATIONS - set(key_muts):
+            cur.execute(
+                """
                 INSERT INTO genetic_results (id, result_bundle_id, mutation, score,
                                              status, evidence_source, intended_use, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                str(uuid.uuid4()), bundle_id, gene,
-                0.05,
-                "NEGATIVE",
-                "TCGA_MAF",
-                "research / decision support (non-diagnostic)",
-                now,
-            ))
+            """,
+                (
+                    str(uuid.uuid4()),
+                    bundle_id,
+                    gene,
+                    0.05,
+                    "NEGATIVE",
+                    "TCGA_MAF",
+                    "research / decision support (non-diagnostic)",
+                    now,
+                ),
+            )
 
         # Insert morphologic profile
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO morphologic_profiles (id, result_bundle_id, n_tiles_total,
                                               pct_lepidic, pct_acinar, pct_papillary,
                                               pct_micropapillary, pct_solid, pct_mucinous, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            str(uuid.uuid4()), bundle_id, n_tiles,
-            pct_lepidic, pct_acinar, pct_papillary,
-            pct_micropapillary, pct_solid, pct_mucinous, now,
-        ))
+        """,
+            (
+                str(uuid.uuid4()),
+                bundle_id,
+                n_tiles,
+                pct_lepidic,
+                pct_acinar,
+                pct_papillary,
+                pct_micropapillary,
+                pct_solid,
+                pct_mucinous,
+                now,
+            ),
+        )
 
         seeded_count += 1
         if seeded_count % 10 == 0:
             conn.commit()
-            print(f"  ... seeded {seeded_count}/{len(patients_with_patterns)} patients with full results")
+            print(
+                f"  ... seeded {seeded_count}/{len(patients_with_patterns)} patients with full results"
+            )
 
     conn.commit()
     print(f"  Seeded {seeded_count} patients with full inference results")

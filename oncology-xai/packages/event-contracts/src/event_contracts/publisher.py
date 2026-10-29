@@ -25,7 +25,9 @@ class EventPublisher:
         try:
             conn = pika.BlockingConnection(pika.URLParameters(self.rabbitmq_url))
             ch = conn.channel()
-            ch.exchange_declare(exchange=self.exchange, exchange_type="topic", durable=True)
+            ch.exchange_declare(
+                exchange=self.exchange, exchange_type="topic", durable=True
+            )
             ch.basic_publish(
                 exchange=self.exchange,
                 routing_key=rk,

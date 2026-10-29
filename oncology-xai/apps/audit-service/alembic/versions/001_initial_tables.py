@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-07
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -30,7 +31,12 @@ def upgrade() -> None:
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("status", sa.String(50), server_default="SUCCESS"),
         sa.Column("details", sa.JSON, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("idx_audit_events_event_id", "audit_events", ["event_id"])
     op.create_index("idx_audit_events_type", "audit_events", ["event_type"])

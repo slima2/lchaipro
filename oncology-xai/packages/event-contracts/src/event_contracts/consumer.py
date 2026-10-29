@@ -34,12 +34,16 @@ class BaseConsumer:
         ch.queue_declare(queue=self.queue_name, durable=True)
 
         for key in binding_keys or ["#"]:
-            ch.queue_bind(exchange=self.exchange, queue=self.queue_name, routing_key=key)
+            ch.queue_bind(
+                exchange=self.exchange, queue=self.queue_name, routing_key=key
+            )
 
         def _callback(ch, method, properties, body):  # type: ignore[no-untyped-def]
             try:
                 envelope = EventEnvelope.model_validate_json(body)
-                handler = self._handlers.get(envelope.event_type) or self._handlers.get("#")
+                handler = self._handlers.get(envelope.event_type) or self._handlers.get(
+                    "#"
+                )
                 if handler:
                     handler(envelope)
                 else:

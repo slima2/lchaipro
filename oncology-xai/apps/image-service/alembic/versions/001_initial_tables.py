@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-07
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -28,7 +29,12 @@ def upgrade() -> None:
         sa.Column("magnification", sa.String(50), nullable=True),
         sa.Column("notes", sa.String(2000), nullable=True),
         sa.Column("uploaded_by", sa.String(255), nullable=True),
-        sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "uploaded_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("idx_images_case_id", "images", ["case_id"])
 

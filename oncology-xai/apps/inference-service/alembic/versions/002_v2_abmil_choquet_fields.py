@@ -15,20 +15,45 @@ depends_on = None
 
 def upgrade() -> None:
     # result_bundles — v2 columns
-    op.add_column("result_bundles", sa.Column("pipeline_version", sa.String(20), server_default="2.0.0"))
-    op.add_column("result_bundles", sa.Column("use_choquet", sa.Boolean(), server_default="true"))
-    op.add_column("result_bundles", sa.Column("attention_overlay_uri", sa.String(1024), nullable=True))
+    op.add_column(
+        "result_bundles",
+        sa.Column("pipeline_version", sa.String(20), server_default="2.0.0"),
+    )
+    op.add_column(
+        "result_bundles", sa.Column("use_choquet", sa.Boolean(), server_default="true")
+    )
+    op.add_column(
+        "result_bundles",
+        sa.Column("attention_overlay_uri", sa.String(1024), nullable=True),
+    )
 
     # genetic_results — v2 confidence + interpretability columns
-    op.add_column("genetic_results", sa.Column("confidence_label", sa.String(20), nullable=True))
-    op.add_column("genetic_results", sa.Column("auroc_threshold", sa.Float(), nullable=True))
-    op.add_column("genetic_results", sa.Column("prediction_method", sa.String(20), nullable=True))
+    op.add_column(
+        "genetic_results", sa.Column("confidence_label", sa.String(20), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("auroc_threshold", sa.Float(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("prediction_method", sa.String(20), nullable=True)
+    )
     op.add_column("genetic_results", sa.Column("disclaimer", sa.Text(), nullable=True))
-    op.add_column("genetic_results", sa.Column("shap_embedding_pct", sa.Float(), nullable=True))
-    op.add_column("genetic_results", sa.Column("shap_pattern_pct", sa.Float(), nullable=True))
-    op.add_column("genetic_results", sa.Column("shap_top_patterns", sa.JSON(), nullable=True))
-    op.add_column("genetic_results", sa.Column("choquet_shapley_values", sa.JSON(), nullable=True))
-    op.add_column("genetic_results", sa.Column("choquet_interaction_indices", sa.JSON(), nullable=True))
+    op.add_column(
+        "genetic_results", sa.Column("shap_embedding_pct", sa.Float(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("shap_pattern_pct", sa.Float(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("shap_top_patterns", sa.JSON(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("choquet_shapley_values", sa.JSON(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results",
+        sa.Column("choquet_interaction_indices", sa.JSON(), nullable=True),
+    )
 
 
 def downgrade() -> None:

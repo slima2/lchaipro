@@ -45,35 +45,51 @@ AUROC_THRESHOLD = 0.70
 # "proposed"  = pattern-informed ABMIL concat (518-d)
 # "choquet"   = Fuzzy Choquet MIL
 BEST_METHOD: dict[str, str] = {
-    "TP53":  "baseline2",   # Visual features sufficient
-    "EGFR":  "baseline2",   # Visual features sufficient
-    "STK11": "proposed",    # Patterns add signal
-    "KEAP1": "proposed",    # Patterns add signal over B2
-    "KRAS":  "choquet",     # Fuzzy aggregation captures signal
-    "RBM10": "choquet",     # Choquet best despite low prevalence
+    "TP53": "baseline2",  # Visual features sufficient
+    "EGFR": "baseline2",  # Visual features sufficient
+    "STK11": "proposed",  # Patterns add signal
+    "KEAP1": "proposed",  # Patterns add signal over B2
+    "KRAS": "choquet",  # Fuzzy aggregation captures signal
+    "RBM10": "choquet",  # Choquet best despite low prevalence
 }
 
 BEST_METHOD_LABEL: dict[str, str] = {
     "baseline2": "B2 (embeddings)",
-    "proposed":  "P (proposed concat)",
-    "choquet":   "FC (Fuzzy Choquet)",
+    "proposed": "P (proposed concat)",
+    "choquet": "FC (Fuzzy Choquet)",
 }
 
 PROPOSED_AUROC: dict[str, float] = {
-    "TP53": 0.718, "EGFR": 0.701, "KRAS": 0.609,
-    "STK11": 0.695, "KEAP1": 0.610, "RBM10": 0.661,
+    "TP53": 0.718,
+    "EGFR": 0.701,
+    "KRAS": 0.609,
+    "STK11": 0.695,
+    "KEAP1": 0.610,
+    "RBM10": 0.661,
 }
 BASELINE2_AUROC: dict[str, float] = {
-    "TP53": 0.718, "EGFR": 0.701, "KRAS": 0.607,
-    "STK11": 0.684, "KEAP1": 0.597, "RBM10": 0.642,
+    "TP53": 0.718,
+    "EGFR": 0.701,
+    "KRAS": 0.607,
+    "STK11": 0.684,
+    "KEAP1": 0.597,
+    "RBM10": 0.642,
 }
 BASELINE3_AUROC: dict[str, float] = {
-    "TP53": 0.616, "EGFR": 0.625, "KRAS": 0.545,
-    "STK11": 0.617, "KEAP1": 0.588, "RBM10": 0.653,
+    "TP53": 0.616,
+    "EGFR": 0.625,
+    "KRAS": 0.545,
+    "STK11": 0.617,
+    "KEAP1": 0.588,
+    "RBM10": 0.653,
 }
 CHOQUET_AUROC: dict[str, float] = {
-    "TP53": 0.716, "EGFR": 0.684, "KRAS": 0.609,
-    "STK11": 0.658, "KEAP1": 0.589, "RBM10": 0.661,
+    "TP53": 0.716,
+    "EGFR": 0.684,
+    "KRAS": 0.609,
+    "STK11": 0.658,
+    "KEAP1": 0.589,
+    "RBM10": 0.661,
 }
 
 # Optimal per-gene mutation thresholds based on prevalence and Youden's J.
@@ -81,12 +97,12 @@ CHOQUET_AUROC: dict[str, float] = {
 # For low-prevalence genes, the default 0.50 threshold is too high and misses
 # true positives. These thresholds are calibrated to maximize sensitivity + specificity.
 GENE_MUTATION_THRESHOLD: dict[str, float] = {
-    "TP53":  0.45,   # high prevalence (50.3%) — near 0.5 is appropriate
-    "EGFR":  0.20,   # low prevalence (15%) — lower threshold captures more true positives
-    "KRAS":  0.25,   # moderate prevalence (25%)
-    "STK11": 0.20,   # low prevalence (13%)
-    "KEAP1": 0.20,   # low prevalence (17%)
-    "RBM10": 0.15,   # very low prevalence (7%) — needs low threshold
+    "TP53": 0.45,  # high prevalence (50.3%) — near 0.5 is appropriate
+    "EGFR": 0.20,  # low prevalence (15%) — lower threshold captures more true positives
+    "KRAS": 0.25,  # moderate prevalence (25%)
+    "STK11": 0.20,  # low prevalence (13%)
+    "KEAP1": 0.20,  # low prevalence (17%)
+    "RBM10": 0.15,  # very low prevalence (7%) — needs low threshold
 }
 
 _CACHE: dict[str, Any] = {}
@@ -125,12 +141,18 @@ class CheckpointLoader:
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+            ckpt = torch.load(
+                str(ckpt_path), map_location=self.device, weights_only=True
+            )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
-            logger.info("Loaded ABMIL checkpoint %s for %s (fold %d)", fname, gene, fold)
+            logger.info(
+                "Loaded ABMIL checkpoint %s for %s (fold %d)", fname, gene, fold
+            )
         else:
-            logger.warning("ABMIL checkpoint not found: %s — using random init", ckpt_path)
+            logger.warning(
+                "ABMIL checkpoint not found: %s — using random init", ckpt_path
+            )
 
         model.eval().to(self.device)
         _CACHE[key] = model
@@ -155,7 +177,9 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+            ckpt = torch.load(
+                str(ckpt_path), map_location=self.device, weights_only=True
+            )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline2 (emb-only) %s for %s", fname, gene)
@@ -185,7 +209,9 @@ class CheckpointLoader:
 
         model = ABMIL(input_dim, hidden_dim, attn_dim, dropout)
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+            ckpt = torch.load(
+                str(ckpt_path), map_location=self.device, weights_only=True
+            )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
             logger.info("Loaded baseline3 (pat-only) %s for %s", fname, gene)
@@ -220,12 +246,18 @@ class CheckpointLoader:
         model = FuzzyChoquetMIL(embed_dim, n_patterns, hidden_dim, attn_dim, dropout)
 
         if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+            ckpt = torch.load(
+                str(ckpt_path), map_location=self.device, weights_only=True
+            )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
             state = ckpt.get("model_state_dict", ckpt.get("state_dict", ckpt))
             model.load_state_dict(state, strict=False)
-            logger.info("Loaded Choquet checkpoint %s for %s (fold %d)", fname, gene, fold)
+            logger.info(
+                "Loaded Choquet checkpoint %s for %s (fold %d)", fname, gene, fold
+            )
         else:
-            logger.warning("Choquet checkpoint not found: %s — using random init", ckpt_path)
+            logger.warning(
+                "Choquet checkpoint not found: %s — using random init", ckpt_path
+            )
 
         model.eval().to(self.device)
         _CACHE[key] = model
@@ -236,8 +268,14 @@ class CheckpointLoader:
         status: dict[str, dict[str, Any]] = {}
         for gene in GENES_V2:
             fold = BEST_FOLD[gene]
-            abmil_path = self.checkpoint_dir / f"ckpt_proposed_abmil_concat_{gene}_fold{fold}.pth"
-            choquet_path = self.checkpoint_dir / f"ckpt_proposed_fuzzy_choquet_{gene}_fold{fold}.pth"
+            abmil_path = (
+                self.checkpoint_dir
+                / f"ckpt_proposed_abmil_concat_{gene}_fold{fold}.pth"
+            )
+            choquet_path = (
+                self.checkpoint_dir
+                / f"ckpt_proposed_fuzzy_choquet_{gene}_fold{fold}.pth"
+            )
             status[gene] = {
                 "best_fold": fold,
                 "abmil_loaded": self._cache_key("abmil", gene) in _CACHE,

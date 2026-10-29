@@ -18,7 +18,14 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-PATTERN_NAMES = ["micropapillary", "cribriform", "papillary", "lepidic", "solid", "acinar"]
+PATTERN_NAMES = [
+    "micropapillary",
+    "cribriform",
+    "papillary",
+    "lepidic",
+    "solid",
+    "acinar",
+]
 EMBED_DIM = 512
 PATTERN_DIM = 6
 
@@ -26,6 +33,7 @@ PATTERN_DIM = 6
 @dataclass
 class SHAPDecomposition:
     """SHAP decomposition result for a single gene."""
+
     gene: str = ""
     embedding_contribution_pct: float = 0.0
     pattern_contribution_pct: float = 0.0
@@ -57,7 +65,9 @@ def run_shap_decomposition(
     result = SHAPDecomposition(gene=gene)
 
     try:
-        shap_vals = _compute_gradient_shap(concat_features, model, device, background_size)
+        shap_vals = _compute_gradient_shap(
+            concat_features, model, device, background_size
+        )
     except Exception as e:
         logger.warning("Gradient SHAP failed for %s: %s — using mock", gene, e)
         return _mock_decomposition(gene)
@@ -70,21 +80,29 @@ def run_shap_decomposition(
     # Normalize by MEAN per-dimension (not sum) to fairly compare
     # 512 embedding dims vs 6 pattern dims
     embed_mean = abs_shap[:EMBED_DIM].mean() if EMBED_DIM > 0 else 0.0
-    pattern_mean = abs_shap[EMBED_DIM:EMBED_DIM + PATTERN_DIM].mean() if PATTERN_DIM > 0 else 0.0
+    pattern_mean = (
+        abs_shap[EMBED_DIM : EMBED_DIM + PATTERN_DIM].mean() if PATTERN_DIM > 0 else 0.0
+    )
     total_mean = embed_mean + pattern_mean
 
     if total_mean > 0:
-        result.embedding_contribution_pct = round(float(embed_mean / total_mean * 100), 1)
-        result.pattern_contribution_pct = round(float(pattern_mean / total_mean * 100), 1)
+        result.embedding_contribution_pct = round(
+            float(embed_mean / total_mean * 100), 1
+        )
+        result.pattern_contribution_pct = round(
+            float(pattern_mean / total_mean * 100), 1
+        )
     else:
         result.embedding_contribution_pct = 50.0
         result.pattern_contribution_pct = 50.0
 
-    pattern_shap = abs_shap[EMBED_DIM:EMBED_DIM + PATTERN_DIM]
+    pattern_shap = abs_shap[EMBED_DIM : EMBED_DIM + PATTERN_DIM]
     top_idx = np.argsort(pattern_shap)[::-1][:2]
-    result.top_pattern_dims = [PATTERN_NAMES[i] for i in top_idx if i < len(PATTERN_NAMES)]
+    result.top_pattern_dims = [
+        PATTERN_NAMES[i] for i in top_idx if i < len(PATTERN_NAMES)
+    ]
 
-    pattern_shap_signed_arr = shap_vals[EMBED_DIM:EMBED_DIM + PATTERN_DIM]
+    pattern_shap_signed_arr = shap_vals[EMBED_DIM : EMBED_DIM + PATTERN_DIM]
     result.pattern_shap_signed = {
         PATTERN_NAMES[i]: round(float(pattern_shap_signed_arr[i]), 6)
         for i in range(min(PATTERN_DIM, len(PATTERN_NAMES)))
@@ -96,7 +114,9 @@ def run_shap_decomposition(
     result.shap_values_full = shap_vals
 
     result.bar_plot_bytes = _generate_bar_plot(gene, result)
-    result.decomposition_plot_bytes = _generate_decomposition_plot(gene, result, pattern_shap)
+    result.decomposition_plot_bytes = _generate_decomposition_plot(
+        gene, result, pattern_shap
+    )
 
     return result
 
@@ -156,6 +176,7 @@ def _generate_bar_plot(gene: str, decomp: SHAPDecomposition) -> bytes:
     """Generate a stacked bar showing embedding vs pattern contribution."""
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -193,6 +214,7 @@ def _generate_decomposition_plot(
     """Generate per-pattern SHAP bar chart."""
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 

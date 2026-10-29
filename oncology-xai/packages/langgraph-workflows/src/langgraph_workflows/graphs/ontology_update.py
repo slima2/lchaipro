@@ -55,7 +55,9 @@ KNOWN_ONTOLOGIES = {
 
 async def source_discovery(state: GraphState) -> GraphState:
     """Discover and validate ontology sources from proposal targets."""
-    state = update_exec(state, status="running", progress=0.05, current_node="source_discovery")
+    state = update_exec(
+        state, status="running", progress=0.05, current_node="source_discovery"
+    )
     inter = dict(state.get("_intermediate", {}))
     inputs = state.get("inputs", {})
 
@@ -68,12 +70,14 @@ async def source_discovery(state: GraphState) -> GraphState:
         source_url = target.get("source_url", "")
         is_whitelisted = any(source_url.startswith(ws) for ws in WHITELISTED_SOURCES)
 
-        validated_sources.append({
-            "name": target.get("name", "unknown"),
-            "source_url": source_url,
-            "whitelisted": is_whitelisted,
-            "status": "validated" if is_whitelisted else "requires_review",
-        })
+        validated_sources.append(
+            {
+                "name": target.get("name", "unknown"),
+                "source_url": source_url,
+                "whitelisted": is_whitelisted,
+                "status": "validated" if is_whitelisted else "requires_review",
+            }
+        )
 
     inter["validated_sources"] = validated_sources
     inter["n_sources"] = len(validated_sources)
@@ -95,21 +99,25 @@ async def fetch_ontology(state: GraphState) -> GraphState:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.head(source["source_url"])
-                fetched.append({
-                    "name": source["name"],
-                    "url": source["source_url"],
-                    "status_code": resp.status_code,
-                    "content_length": resp.headers.get("content-length"),
-                    "fetched": resp.status_code == 200,
-                })
+                fetched.append(
+                    {
+                        "name": source["name"],
+                        "url": source["source_url"],
+                        "status_code": resp.status_code,
+                        "content_length": resp.headers.get("content-length"),
+                        "fetched": resp.status_code == 200,
+                    }
+                )
         except Exception as exc:
             logger.debug("Could not fetch %s: %s", source["source_url"], exc)
-            fetched.append({
-                "name": source["name"],
-                "url": source["source_url"],
-                "fetched": False,
-                "error": str(exc),
-            })
+            fetched.append(
+                {
+                    "name": source["name"],
+                    "url": source["source_url"],
+                    "fetched": False,
+                    "error": str(exc),
+                }
+            )
 
     inter["fetched_sources"] = fetched
     state["_intermediate"] = inter
@@ -143,14 +151,16 @@ async def parse_rdf(state: GraphState) -> GraphState:
         name = source.get("name", "")
         if name in KNOWN_ONTOLOGIES:
             ont_info = KNOWN_ONTOLOGIES[name]
-            parsed_elements.append({
-                "ontology": name,
-                "namespace": ont_info["namespace"],
-                "format": ont_info["format"],
-                "n_classes": 0,  # Would be populated by real RDF parsing
-                "n_relations": 0,
-                "parse_status": "mock_parsed",
-            })
+            parsed_elements.append(
+                {
+                    "ontology": name,
+                    "namespace": ont_info["namespace"],
+                    "format": ont_info["format"],
+                    "n_classes": 0,  # Would be populated by real RDF parsing
+                    "n_relations": 0,
+                    "parse_status": "mock_parsed",
+                }
+            )
 
     inter["parsed_elements"] = parsed_elements
     state["_intermediate"] = inter
@@ -165,7 +175,9 @@ async def compute_diff(state: GraphState) -> GraphState:
     # Try fetching current active versions from ontology-admin-service
     current_versions: list[dict[str, Any]] = []
     try:
-        async with httpx.AsyncClient(base_url=ONTOLOGY_ADMIN_URL, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=ONTOLOGY_ADMIN_URL, timeout=10.0
+        ) as client:
             resp = await client.get("/api/v1/admin/ontologies")
             if resp.status_code == 200:
                 current_versions = [v for v in resp.json() if v.get("is_active")]
@@ -197,11 +209,19 @@ async def extract_relations(state: GraphState) -> GraphState:
         {"subject": "EGFR", "predicate": "associatedWith", "object": "lepidic"},
         {"subject": "EGFR", "predicate": "associatedWith", "object": "papillary"},
         {"subject": "KRAS", "predicate": "associatedWith", "object": "solid"},
-        {"subject": "KRAS", "predicate": "associatedWith", "object": "mucinous_invasive"},
+        {
+            "subject": "KRAS",
+            "predicate": "associatedWith",
+            "object": "mucinous_invasive",
+        },
         {"subject": "TP53", "predicate": "associatedWith", "object": "solid"},
         {"subject": "TP53", "predicate": "associatedWith", "object": "micropapillary"},
         {"subject": "ALK", "predicate": "associatedWith", "object": "solid"},
-        {"subject": "ALK", "predicate": "associatedWith", "object": "mucinous_invasive"},
+        {
+            "subject": "ALK",
+            "predicate": "associatedWith",
+            "object": "mucinous_invasive",
+        },
     ]
 
     inter["extracted_relations"] = domain_relations
@@ -242,7 +262,9 @@ async def impact_analysis(state: GraphState) -> GraphState:
         "affected_cases_estimate": 0,
         "breaking_changes": len(diff.get("removed_classes", [])),
         "new_inferences": reasoner.get("inferred_relations", 0),
-        "recommendation": "proceed" if reasoner.get("consistency") else "review_required",
+        "recommendation": "proceed"
+        if reasoner.get("consistency")
+        else "review_required",
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
@@ -262,12 +284,18 @@ async def create_proposal(state: GraphState) -> GraphState:
 
     # Upload diff report
     diff_json = json.dumps(inter.get("diff_report", {}), indent=2).encode("utf-8")
-    diff_uri = storage.upload_file(f"ontology/proposals/{proposal_id}/diff.json", diff_json, "application/json")
+    diff_uri = storage.upload_file(
+        f"ontology/proposals/{proposal_id}/diff.json", diff_json, "application/json"
+    )
 
     # Upload reasoner report
-    reasoner_json = json.dumps(inter.get("reasoner_result", {}), indent=2).encode("utf-8")
+    reasoner_json = json.dumps(inter.get("reasoner_result", {}), indent=2).encode(
+        "utf-8"
+    )
     reasoner_uri = storage.upload_file(
-        f"ontology/proposals/{proposal_id}/reasoner.json", reasoner_json, "application/json"
+        f"ontology/proposals/{proposal_id}/reasoner.json",
+        reasoner_json,
+        "application/json",
     )
 
     inter["proposal"] = {
@@ -283,11 +311,15 @@ async def create_proposal(state: GraphState) -> GraphState:
 
     # Try creating via ontology-admin-service API
     try:
-        async with httpx.AsyncClient(base_url=ONTOLOGY_ADMIN_URL, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=ONTOLOGY_ADMIN_URL, timeout=10.0
+        ) as client:
             resp = await client.post(
                 "/api/v1/admin/ontologies:update-proposal",
                 json={
-                    "targets": [s.get("name") for s in inter.get("validated_sources", [])],
+                    "targets": [
+                        s.get("name") for s in inter.get("validated_sources", [])
+                    ],
                     "mode": "offline",
                 },
             )
@@ -318,7 +350,11 @@ async def hitl_approval(state: GraphState) -> GraphState:
         logger.info("Proposal %s auto-approved (low risk)", proposal.get("id"))
     else:
         proposal["approval_status"] = "pending_review"
-        logger.info("Proposal %s requires manual review (risk=%s)", proposal.get("id"), impact.get("risk_level"))
+        logger.info(
+            "Proposal %s requires manual review (risk=%s)",
+            proposal.get("id"),
+            impact.get("risk_level"),
+        )
 
     inter["proposal"] = proposal
     state["_intermediate"] = inter
@@ -336,8 +372,12 @@ async def publish_or_rollback(state: GraphState) -> GraphState:
         # Try publishing via API
         proposal_id = proposal.get("id")
         try:
-            async with httpx.AsyncClient(base_url=ONTOLOGY_ADMIN_URL, timeout=10.0) as client:
-                resp = await client.post(f"/api/v1/proposals/{proposal_id}:approve-and-publish")
+            async with httpx.AsyncClient(
+                base_url=ONTOLOGY_ADMIN_URL, timeout=10.0
+            ) as client:
+                resp = await client.post(
+                    f"/api/v1/proposals/{proposal_id}:approve-and-publish"
+                )
                 if resp.status_code == 200:
                     proposal["status"] = "PUBLISHED"
                     logger.info("Proposal %s published successfully", proposal_id)

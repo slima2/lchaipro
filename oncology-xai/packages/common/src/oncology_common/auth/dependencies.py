@@ -42,10 +42,16 @@ async def get_current_user(
         request.state.user = _DEV_USER
         return _DEV_USER
 
-    if not credentials and request.method == "GET" and request.url.path.endswith(_QUERY_TOKEN_PATHS):
+    if (
+        not credentials
+        and request.method == "GET"
+        and request.url.path.endswith(_QUERY_TOKEN_PATHS)
+    ):
         query_token = request.query_params.get("access_token")
         if query_token:
-            credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=query_token)
+            credentials = HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=query_token
+            )
 
     if not credentials:
         raise HTTPException(

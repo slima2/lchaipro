@@ -41,7 +41,9 @@ def _storage() -> StorageClient:
 
 
 @celery.task(bind=True, name="inference.process_image", max_retries=2)
-def process_image_task(self, job_id: str, image_id: str, case_id: str, thresholds: dict | None = None):
+def process_image_task(
+    self, job_id: str, image_id: str, case_id: str, thresholds: dict | None = None
+):
     """Run full inference pipeline for an image."""
     db = get_sync_db()
     storage = _storage()
@@ -55,7 +57,9 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
                     j.error_detail = stage
                 db.commit()
         except Exception:
-            logger.debug("could not update job status", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+            logger.debug(
+                "could not update job status", exc_info=True
+            )  # antes se ignoraba en silencio (Bandit S110)
 
     try:
         job = db.query(MLJobDB).filter_by(id=job_id).first()
@@ -71,6 +75,7 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
 
         # Download image from MinIO and get format for decode
         from sqlalchemy import text
+
         row = db.execute(
             text("SELECT storage_uri, format FROM images WHERE id = :id"),
             {"id": image_id},
@@ -86,6 +91,7 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         else:
             # If no image in DB yet (e.g. mock), use placeholder
             from PIL import Image as PILImage
+
             img = PILImage.new("RGB", (448, 448), (200, 200, 200))
             buf = io.BytesIO()
             img.save(buf, format="PNG")
@@ -93,10 +99,19 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
 
         # Build config (v2) — auto-detect GPU
         import torch
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info("Inference device: %s (CUDA available: %s)", device, torch.cuda.is_available())
+        logger.info(
+            "Inference device: %s (CUDA available: %s)",
+            device,
+            torch.cuda.is_available(),
+        )
         if device == "cuda":
-            logger.info("GPU: %s, VRAM: %.1f GB", torch.cuda.get_device_name(0), torch.cuda.get_device_properties(0).total_memory / 1e9)
+            logger.info(
+                "GPU: %s, VRAM: %.1f GB",
+                torch.cuda.get_device_name(0),
+                torch.cuda.get_device_properties(0).total_memory / 1e9,
+            )
 
         # Resolve original slide name for TCGA detection (via patient external_id)
         slide_name_row = db.execute(
@@ -107,8 +122,14 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
             {"id": image_id},
         ).fetchone()
         slide_name = slide_name_row[0] if slide_name_row and slide_name_row[0] else ""
-        original_filename = slide_name or (key if row and row[0] else f"image:{image_id}")
-        logger.info("Slide origin: name=%s, is_tcga=%s", slide_name[:60] if slide_name else "unknown", "TCGA" in original_filename.upper())
+        original_filename = slide_name or (
+            key if row and row[0] else f"image:{image_id}"
+        )
+        logger.info(
+            "Slide origin: name=%s, is_tcga=%s",
+            slide_name[:60] if slide_name else "unknown",
+            "TCGA" in original_filename.upper(),
+        )
 
         thr = thresholds or {}
         config = InferenceConfig(
@@ -149,23 +170,43 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         storage.upload_bytes(overlay_key, result.overlay_combined_bytes, "image/png")
 
         comp_json = json.dumps(result.pattern_percentages).encode()
-        storage.upload_bytes(f"{prefix}/pattern_composition.json", comp_json, "application/json")
+        storage.upload_bytes(
+            f"{prefix}/pattern_composition.json", comp_json, "application/json"
+        )
 
         if result.embedding is not None:
             import numpy as np
+
             emb_buf = io.BytesIO()
             np.savez_compressed(emb_buf, embedding=result.embedding)
-            storage.upload_bytes(f"{prefix}/embedding.npz", emb_buf.getvalue(), "application/octet-stream")
+            storage.upload_bytes(
+                f"{prefix}/embedding.npz",
+                emb_buf.getvalue(),
+                "application/octet-stream",
+            )
 
         if result.tile_embeddings is not None and result.tile_pattern_probs is not None:
             import numpy as np
+
             tile_buf = io.BytesIO()
-            np.savez_compressed(tile_buf, tile_embeddings=result.tile_embeddings,
-                                tile_pattern_probs=result.tile_pattern_probs,
-                                tile_coords=np.array(result.tile_coords) if result.tile_coords else np.array([]))
-            storage.upload_bytes(f"{prefix}/tile_data.npz", tile_buf.getvalue(), "application/octet-stream")
-            logger.info("Saved tile_data.npz: embeddings=%s, probs=%s",
-                        result.tile_embeddings.shape, result.tile_pattern_probs.shape)
+            np.savez_compressed(
+                tile_buf,
+                tile_embeddings=result.tile_embeddings,
+                tile_pattern_probs=result.tile_pattern_probs,
+                tile_coords=np.array(result.tile_coords)
+                if result.tile_coords
+                else np.array([]),
+            )
+            storage.upload_bytes(
+                f"{prefix}/tile_data.npz",
+                tile_buf.getvalue(),
+                "application/octet-stream",
+            )
+            logger.info(
+                "Saved tile_data.npz: embeddings=%s, probs=%s",
+                result.tile_embeddings.shape,
+                result.tile_pattern_probs.shape,
+            )
 
         metrics_json = json.dumps(result.metrics).encode()
         storage.upload_bytes(f"{prefix}/metrics.json", metrics_json, "application/json")
@@ -237,7 +278,10 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
             pipeline_version="2.0.0",
             use_choquet=config.use_choquet,
             attention_overlay_uri=attention_overlay_uri,
-            thresholds={"pattern": config.pattern_threshold, "mutation": config.mutation_threshold},
+            thresholds={
+                "pattern": config.pattern_threshold,
+                "mutation": config.mutation_threshold,
+            },
             pattern_composition=result.pattern_percentages,
             predominant_pattern=result.predominant_pattern,
             evidence_source="THESIS_INTERNAL",
@@ -262,18 +306,26 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         shap_by_gene = {d.gene: d for d in result.shap_decompositions}
         choquet_by_gene = {c.gene: c for c in result.choquet_shapley}
         ablation_by_gene = {
-            a.gene: {"p_proposed": a.p_proposed, "p_emb_only": a.p_emb_only,
-                      "p_pat_only": a.p_pat_only, "delta_patterns": a.delta_patterns,
-                      "proposed_auroc": a.proposed_auroc,
-                      "baseline2_auroc": a.baseline2_auroc,
-                      "baseline3_auroc": a.baseline3_auroc,
-                      "choquet_auroc": a.choquet_auroc,
-                      "auroc_delta": a.auroc_delta}
+            a.gene: {
+                "p_proposed": a.p_proposed,
+                "p_emb_only": a.p_emb_only,
+                "p_pat_only": a.p_pat_only,
+                "delta_patterns": a.delta_patterns,
+                "proposed_auroc": a.proposed_auroc,
+                "baseline2_auroc": a.baseline2_auroc,
+                "baseline3_auroc": a.baseline3_auroc,
+                "choquet_auroc": a.choquet_auroc,
+                "auroc_delta": a.auroc_delta,
+            }
             for a in result.ablation_results
         }
         permutation_by_gene = {
-            p.gene: {"p_original": p.p_original, "p_permuted_mean": p.p_permuted_mean,
-                      "pattern_importance": p.pattern_importance, "importance_pct": p.importance_pct}
+            p.gene: {
+                "p_original": p.p_original,
+                "p_permuted_mean": p.p_permuted_mean,
+                "pattern_importance": p.pattern_importance,
+                "importance_pct": p.importance_pct,
+            }
             for p in result.permutation_results
         }
 
@@ -290,13 +342,19 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
                 auroc_threshold=entry.auroc_threshold,
                 prediction_method=entry.method,
                 disclaimer=entry.disclaimer,
-                shap_embedding_pct=shap_d.embedding_contribution_pct if shap_d else None,
+                shap_embedding_pct=shap_d.embedding_contribution_pct
+                if shap_d
+                else None,
                 shap_pattern_pct=shap_d.pattern_contribution_pct if shap_d else None,
                 shap_top_patterns=shap_d.top_pattern_dims if shap_d else None,
                 shap_pattern_signed=shap_d.pattern_shap_signed if shap_d else None,
-                shap_pattern_directions=shap_d.pattern_shap_directions if shap_d else None,
+                shap_pattern_directions=shap_d.pattern_shap_directions
+                if shap_d
+                else None,
                 choquet_shapley_values=choquet_d.shapley_values if choquet_d else None,
-                choquet_interaction_indices=choquet_d.interaction_indices if choquet_d else None,
+                choquet_interaction_indices=choquet_d.interaction_indices
+                if choquet_d
+                else None,
                 ablation_data=ablation_by_gene.get(entry.gene),
                 permutation_data=permutation_by_gene.get(entry.gene),
             )
@@ -321,7 +379,9 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
             pct_lepidic=result.morphologic_profile.get("pct_lepidic", 0.0),
             pct_acinar=result.morphologic_profile.get("pct_acinar", 0.0),
             pct_papillary=result.morphologic_profile.get("pct_papillary", 0.0),
-            pct_micropapillary=result.morphologic_profile.get("pct_micropapillary", 0.0),
+            pct_micropapillary=result.morphologic_profile.get(
+                "pct_micropapillary", 0.0
+            ),
             pct_solid=result.morphologic_profile.get("pct_solid", 0.0),
             pct_mucinous=result.morphologic_profile.get("pct_cribriform", 0.0),
         )
@@ -351,11 +411,11 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         for name, data in result.shap_artifacts.items():
             shap_key = f"{prefix}/xai/{name}"
             storage.upload_bytes(shap_key, data, "image/png")
-            gene = name.split("_")[1] if "_" in name else None
+            shap_gene = name.split("_")[1] if "_" in name else None
             art = XAIArtifactDB(
                 result_bundle_id=rb_id,
                 artifact_type="shap",
-                gene=gene,
+                gene=shap_gene,
                 uri=f"s3://{settings.s3_bucket}/{shap_key}",
                 hash=hashlib.sha256(data).hexdigest(),
             )
@@ -371,19 +431,21 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         # Emit event
         try:
             pub = EventPublisher(settings.rabbitmq_url)
-            pub.publish(EventEnvelope(
-                event_type="inference.completed",
-                producer="inference-service",
-                case_id=case_id,
-                payload={
-                    "job_id": job_id,
-                    "result_bundle_id": rb_id,
-                    "image_id": image_id,
-                    "entity_type": "result_bundle",
-                    "entity_id": rb_id,
-                    "action": "inference.completed",
-                },
-            ))
+            pub.publish(
+                EventEnvelope(
+                    event_type="inference.completed",
+                    producer="inference-service",
+                    case_id=case_id,
+                    payload={
+                        "job_id": job_id,
+                        "result_bundle_id": rb_id,
+                        "image_id": image_id,
+                        "entity_type": "result_bundle",
+                        "entity_id": rb_id,
+                        "action": "inference.completed",
+                    },
+                )
+            )
         except Exception:
             logger.exception("Failed to publish inference.completed event")
 
@@ -402,5 +464,3 @@ def process_image_task(self, job_id: str, image_id: str, case_id: str, threshold
         raise
     finally:
         db.close()
-
-

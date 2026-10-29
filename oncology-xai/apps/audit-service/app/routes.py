@@ -32,7 +32,9 @@ async def list_events(
 
 @router.get("/audit/events/{event_id}")
 async def get_event(event_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(AuditEventDB).where(AuditEventDB.event_id == event_id))
+    result = await db.execute(
+        select(AuditEventDB).where(AuditEventDB.event_id == event_id)
+    )
     evt = result.scalar_one_or_none()
     if not evt:
         raise HTTPException(status_code=404, detail="Event not found")

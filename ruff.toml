@@ -1,0 +1,7 @@
+# Configuración de Ruff para el job sec:lint (ruff check . && ruff format --check .)
+# Código de investigación de la tesis: no se empaqueta en ninguna imagen ni se despliega
+# (los Dockerfile solo copian apps/ y packages/).
+extend-exclude = [
+    "oncology-xai/Thesis",
+    "oncology-xai/thesis_edits",
+]

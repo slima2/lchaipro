@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ABMILResult:
     """Per-gene prediction result (best method per gene)."""
+
     gene: str = ""
     probability: float = 0.0
     label: str = "Inconclusive"
@@ -33,6 +34,7 @@ class ABMILResult:
 @dataclass
 class ABMILInferenceOutput:
     """Full output of the ABMIL pathway across all genes."""
+
     gene_results: list[ABMILResult] = field(default_factory=list)
     attention_map: np.ndarray | None = None  # (N,) best-gene attention weights
     top_k_indices: list[int] = field(default_factory=list)
@@ -71,16 +73,21 @@ def run_abmil_inference(
 
         try:
             if method == "baseline2":
-                model = checkpoint_loader.load_baseline2(gene, input_dim=embeddings.shape[1])
+                model = checkpoint_loader.load_baseline2(
+                    gene, input_dim=embeddings.shape[1]
+                )
                 feat_t = emb_t
             elif method == "choquet":
-                choquet_model = checkpoint_loader.load_choquet(gene, embed_dim=embeddings.shape[1])
+                choquet_model = checkpoint_loader.load_choquet(
+                    gene, embed_dim=embeddings.shape[1]
+                )
                 with torch.no_grad():
                     logit, attn = choquet_model((emb_t, pat_t), return_attention=True)
                     prob = torch.sigmoid(logit).item()
                 attn_np = attn.cpu().numpy() if attn is not None else None
                 result = ABMILResult(
-                    gene=gene, probability=round(prob, 4),
+                    gene=gene,
+                    probability=round(prob, 4),
                     label=CheckpointLoader.get_confidence_label(gene),
                     auroc_threshold=0.70,
                     disclaimer=CheckpointLoader.get_disclaimer(gene),
@@ -96,7 +103,12 @@ def run_abmil_inference(
                 model = checkpoint_loader.load_abmil(gene, input_dim=concat.shape[1])
                 feat_t = concat_t
         except Exception as e:
-            logger.warning("Failed to load %s for %s: %s — falling back to proposed", method, gene, e)
+            logger.warning(
+                "Failed to load %s for %s: %s — falling back to proposed",
+                method,
+                gene,
+                e,
+            )
             try:
                 model = checkpoint_loader.load_abmil(gene, input_dim=concat.shape[1])
                 feat_t = concat_t
@@ -112,7 +124,8 @@ def run_abmil_inference(
         attn_np = attn.cpu().numpy() if attn is not None else None
 
         result = ABMILResult(
-            gene=gene, probability=round(prob, 4),
+            gene=gene,
+            probability=round(prob, 4),
             label=CheckpointLoader.get_confidence_label(gene),
             auroc_threshold=0.70,
             disclaimer=CheckpointLoader.get_disclaimer(gene),
@@ -136,6 +149,7 @@ def run_abmil_inference(
 @dataclass
 class AblationEntry:
     """Per-gene ablation comparison: proposed vs emb-only vs pat-only."""
+
     gene: str = ""
     # Per-slide predictions from each model
     p_proposed: float = 0.0
@@ -153,6 +167,7 @@ class AblationEntry:
 @dataclass
 class PermutationEntry:
     """Per-gene permutation importance of pattern dimensions."""
+
     gene: str = ""
     p_original: float = 0.0
     p_permuted_mean: float = 0.0
@@ -177,9 +192,11 @@ def run_ablation_comparison(
     device = checkpoint_loader.device
     target_genes = genes or GENES_V2
 
-    concat_t = torch.from_numpy(
-        np.concatenate([embeddings, pattern_probs], axis=1)
-    ).float().to(device)
+    concat_t = (
+        torch.from_numpy(np.concatenate([embeddings, pattern_probs], axis=1))
+        .float()
+        .to(device)
+    )
     emb_t = torch.from_numpy(embeddings).float().to(device)
     pat_t = torch.from_numpy(pattern_probs).float().to(device)
 
@@ -196,7 +213,9 @@ def run_ablation_comparison(
             logger.warning("Ablation proposed failed for %s: %s", gene, e)
 
         try:
-            model_emb = checkpoint_loader.load_baseline2(gene, input_dim=embeddings.shape[1])
+            model_emb = checkpoint_loader.load_baseline2(
+                gene, input_dim=embeddings.shape[1]
+            )
             with torch.no_grad():
                 logit, _ = model_emb(emb_t)
                 p_emb = torch.sigmoid(logit).item()
@@ -204,7 +223,9 @@ def run_ablation_comparison(
             logger.warning("Ablation baseline2 failed for %s: %s", gene, e)
 
         try:
-            model_pat = checkpoint_loader.load_baseline3(gene, input_dim=pattern_probs.shape[1])
+            model_pat = checkpoint_loader.load_baseline3(
+                gene, input_dim=pattern_probs.shape[1]
+            )
             with torch.no_grad():
                 logit, _ = model_pat(pat_t)
                 p_pat = torch.sigmoid(logit).item()
@@ -213,18 +234,20 @@ def run_ablation_comparison(
 
         p_auroc = PROPOSED_AUROC.get(gene, 0.0)
         b2_auroc = BASELINE2_AUROC.get(gene, 0.0)
-        results.append(AblationEntry(
-            gene=gene,
-            p_proposed=round(p_proposed, 4),
-            p_emb_only=round(p_emb, 4),
-            p_pat_only=round(p_pat, 4),
-            delta_patterns=round(p_proposed - p_emb, 4),
-            proposed_auroc=p_auroc,
-            baseline2_auroc=b2_auroc,
-            baseline3_auroc=BASELINE3_AUROC.get(gene, 0.0),
-            choquet_auroc=CHOQUET_AUROC.get(gene, 0.0),
-            auroc_delta=round(p_auroc - b2_auroc, 4),
-        ))
+        results.append(
+            AblationEntry(
+                gene=gene,
+                p_proposed=round(p_proposed, 4),
+                p_emb_only=round(p_emb, 4),
+                p_pat_only=round(p_pat, 4),
+                delta_patterns=round(p_proposed - p_emb, 4),
+                proposed_auroc=p_auroc,
+                baseline2_auroc=b2_auroc,
+                baseline3_auroc=BASELINE3_AUROC.get(gene, 0.0),
+                choquet_auroc=CHOQUET_AUROC.get(gene, 0.0),
+                auroc_delta=round(p_auroc - b2_auroc, 4),
+            )
+        )
 
     return results
 
@@ -242,8 +265,6 @@ def run_permutation_importance(
 
     concat_orig = np.concatenate([embeddings, pattern_probs], axis=1)  # (N, 518)
     concat_orig_t = torch.from_numpy(concat_orig).float().to(device)
-    n_tiles = embeddings.shape[0]
-    embed_dim = embeddings.shape[1]
 
     results = []
     for gene in target_genes:
@@ -274,13 +295,15 @@ def run_permutation_importance(
         p_mean_perm = float(np.mean(permuted_probs))
         importance = abs(p_original - p_mean_perm)
 
-        results.append(PermutationEntry(
-            gene=gene,
-            p_original=round(p_original, 4),
-            p_permuted_mean=round(p_mean_perm, 4),
-            pattern_importance=round(importance, 4),
-            importance_pct=round(importance * 100, 1),
-        ))
+        results.append(
+            PermutationEntry(
+                gene=gene,
+                p_original=round(p_original, 4),
+                p_permuted_mean=round(p_mean_perm, 4),
+                pattern_importance=round(importance, 4),
+                importance_pct=round(importance * 100, 1),
+            )
+        )
 
     return results
 

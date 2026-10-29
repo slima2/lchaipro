@@ -57,24 +57,74 @@ STAGE_KEYWORDS = {
 
 # Ontology IRI mappings
 ONTOLOGY_MAP: dict[str, dict[str, str]] = {
-    "EGFR": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757", "label": "EGFR Gene"},
-    "KRAS": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C25785", "label": "KRAS Gene"},
-    "TP53": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359", "label": "TP53 Gene"},
-    "ALK": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C20316", "label": "ALK Gene"},
-    "ROS1": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101480", "label": "ROS1 Gene"},
-    "adenocarcinoma": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852", "label": "Adenocarcinoma"},
-    "NSCLC": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2926", "label": "Non-Small Cell Lung Carcinoma"},
-    "lepidic": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821", "label": "Lepidic Growth Pattern"},
-    "acinar": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35922", "label": "Acinar Pattern"},
-    "papillary": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911", "label": "Papillary Growth Pattern"},
-    "micropapillary": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181", "label": "Micropapillary Growth Pattern"},
-    "solid": {"ontology": "NCIt", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36182", "label": "Solid Growth Pattern"},
+    "EGFR": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757",
+        "label": "EGFR Gene",
+    },
+    "KRAS": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C25785",
+        "label": "KRAS Gene",
+    },
+    "TP53": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359",
+        "label": "TP53 Gene",
+    },
+    "ALK": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C20316",
+        "label": "ALK Gene",
+    },
+    "ROS1": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101480",
+        "label": "ROS1 Gene",
+    },
+    "adenocarcinoma": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852",
+        "label": "Adenocarcinoma",
+    },
+    "NSCLC": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2926",
+        "label": "Non-Small Cell Lung Carcinoma",
+    },
+    "lepidic": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821",
+        "label": "Lepidic Growth Pattern",
+    },
+    "acinar": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35922",
+        "label": "Acinar Pattern",
+    },
+    "papillary": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911",
+        "label": "Papillary Growth Pattern",
+    },
+    "micropapillary": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181",
+        "label": "Micropapillary Growth Pattern",
+    },
+    "solid": {
+        "ontology": "NCIt",
+        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36182",
+        "label": "Solid Growth Pattern",
+    },
 }
 
 
 async def normalize_ehr(state: GraphState) -> GraphState:
     """Normalize EHR text: whitespace, encoding, and section detection."""
-    state = update_exec(state, status="running", progress=0.1, current_node="normalize_ehr")
+    state = update_exec(
+        state, status="running", progress=0.1, current_node="normalize_ehr"
+    )
     ehr_text = state.get("_ehr_text", "")
     if not ehr_text:
         ehr_text = state.get("inputs", {}).get("ehr_text", "")
@@ -101,50 +151,58 @@ async def extract_entities(state: GraphState) -> GraphState:
     # Extract mutations
     for gene, pattern in MUTATION_KEYWORDS.items():
         for match in re.finditer(pattern, ehr_text, re.IGNORECASE):
-            entities.append({
-                "text": match.group(),
-                "type": "MUTATION",
-                "start": match.start(),
-                "end": match.end(),
-                "confidence": 0.95,
-                "normalized": gene,
-            })
+            entities.append(
+                {
+                    "text": match.group(),
+                    "type": "MUTATION",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "confidence": 0.95,
+                    "normalized": gene,
+                }
+            )
 
     # Extract patterns
     for pname, pattern in PATTERN_KEYWORDS.items():
         for match in re.finditer(pattern, ehr_text, re.IGNORECASE):
-            entities.append({
-                "text": match.group(),
-                "type": "PATTERN",
-                "start": match.start(),
-                "end": match.end(),
-                "confidence": 0.90,
-                "normalized": pname,
-            })
+            entities.append(
+                {
+                    "text": match.group(),
+                    "type": "PATTERN",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "confidence": 0.90,
+                    "normalized": pname,
+                }
+            )
 
     # Extract diagnoses
     for dx, pattern in DIAGNOSIS_KEYWORDS.items():
         for match in re.finditer(pattern, ehr_text, re.IGNORECASE):
-            entities.append({
-                "text": match.group(),
-                "type": "DIAGNOSIS",
-                "start": match.start(),
-                "end": match.end(),
-                "confidence": 0.90,
-                "normalized": dx,
-            })
+            entities.append(
+                {
+                    "text": match.group(),
+                    "type": "DIAGNOSIS",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "confidence": 0.90,
+                    "normalized": dx,
+                }
+            )
 
     # Extract stages
     for stage, pattern in STAGE_KEYWORDS.items():
         for match in re.finditer(pattern, ehr_text, re.IGNORECASE):
-            entities.append({
-                "text": match.group(),
-                "type": "STAGE",
-                "start": match.start(),
-                "end": match.end(),
-                "confidence": 0.85,
-                "normalized": stage,
-            })
+            entities.append(
+                {
+                    "text": match.group(),
+                    "type": "STAGE",
+                    "start": match.start(),
+                    "end": match.end(),
+                    "confidence": 0.85,
+                    "normalized": stage,
+                }
+            )
 
     outputs = dict(state.get("outputs", {}))
     outputs["entities"] = entities
@@ -165,15 +223,17 @@ async def lookup_candidates(state: GraphState) -> GraphState:
         normalized = entity.get("normalized", entity.get("text", ""))
         if normalized in ONTOLOGY_MAP:
             mapping = ONTOLOGY_MAP[normalized]
-            candidates.append({
-                "entity_text": entity["text"],
-                "entity_type": entity["type"],
-                "ontology": mapping["ontology"],
-                "iri": mapping["iri"],
-                "label": mapping["label"],
-                "confidence": entity.get("confidence", 0.5) * 0.95,
-                "method": "keyword_lookup",
-            })
+            candidates.append(
+                {
+                    "entity_text": entity["text"],
+                    "entity_type": entity["type"],
+                    "ontology": mapping["ontology"],
+                    "iri": mapping["iri"],
+                    "label": mapping["label"],
+                    "confidence": entity.get("confidence", 0.5) * 0.95,
+                    "method": "keyword_lookup",
+                }
+            )
 
     # Try SPARQL lookup against Fuseki for unmapped entities
     unmapped = [e for e in entities if e.get("normalized", "") not in ONTOLOGY_MAP]
@@ -187,15 +247,17 @@ async def lookup_candidates(state: GraphState) -> GraphState:
                     )
                     if resp.status_code == 200:
                         for hit in resp.json():
-                            candidates.append({
-                                "entity_text": entity["text"],
-                                "entity_type": entity["type"],
-                                "ontology": hit.get("ontology", "NCIt"),
-                                "iri": hit.get("iri", ""),
-                                "label": hit.get("label", ""),
-                                "confidence": hit.get("score", 0.5),
-                                "method": "sparql_search",
-                            })
+                            candidates.append(
+                                {
+                                    "entity_text": entity["text"],
+                                    "entity_type": entity["type"],
+                                    "ontology": hit.get("ontology", "NCIt"),
+                                    "iri": hit.get("iri", ""),
+                                    "label": hit.get("label", ""),
+                                    "confidence": hit.get("score", 0.5),
+                                    "method": "sparql_search",
+                                }
+                            )
         except Exception as exc:
             logger.debug("SPARQL lookup failed (expected in mock mode): %s", exc)
 
@@ -256,10 +318,14 @@ async def persist_entities_mappings(state: GraphState) -> GraphState:
     ehr_id = state.get("inputs", {}).get("ehr_id")
     if ehr_id:
         try:
-            async with httpx.AsyncClient(base_url=EHR_SERVICE_URL, timeout=15.0) as client:
+            async with httpx.AsyncClient(
+                base_url=EHR_SERVICE_URL, timeout=15.0
+            ) as client:
                 resp = await client.post(f"/api/v1/ehr/{ehr_id}:extract-and-map")
                 if resp.status_code == 200:
-                    logger.info("Persisted entities/mappings via ehr-service for ehr=%s", ehr_id)
+                    logger.info(
+                        "Persisted entities/mappings via ehr-service for ehr=%s", ehr_id
+                    )
         except Exception as exc:
             logger.debug("Could not persist to ehr-service: %s", exc)
 

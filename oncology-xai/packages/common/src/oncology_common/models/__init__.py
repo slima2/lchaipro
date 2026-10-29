@@ -7,7 +7,7 @@ from oncology_common.models.base import (
     HealthResponse,
     PaginatedResponse,
 )
-from oncology_common.models.entities import *
+from oncology_common.models.entities import *  # noqa: F403  -- reexporta las ~35 entidades del dominio
 
 __all__ = [
     "BaseModel",

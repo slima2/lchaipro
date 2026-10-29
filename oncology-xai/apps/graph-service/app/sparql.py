@@ -22,10 +22,7 @@ async def sparql_query(fuseki_url: str, dataset: str, query: str) -> list[dict]:
         resp.raise_for_status()
         results = resp.json()
         bindings = results.get("results", {}).get("bindings", [])
-        return [
-            {k: v.get("value") for k, v in row.items()}
-            for row in bindings
-        ]
+        return [{k: v.get("value") for k, v in row.items()} for row in bindings]
 
 
 async def get_case_subgraph(
@@ -53,18 +50,34 @@ async def get_case_subgraph(
         if not nodes:
             nodes, edges = _mock_case_graph(case_id)
             logger.warning("Curated graph returned empty, using mock graph")
-            return {"nodes": list(nodes.values()), "edges": edges, "source": "mock", "source_message": "Demo mockup graph."}
+            return {
+                "nodes": list(nodes.values()),
+                "edges": edges,
+                "source": "mock",
+                "source_message": "Demo mockup graph.",
+            }
         is_dynamic = kwargs.get("pattern_results") is not None
         has_discovered = bool(kwargs.get("discovered_relations"))
         msg = "Dynamic graph based on case results"
         if has_discovered:
             msg += " + relations discovered by DeepSearch (literature)"
         msg += " (NCIt/MONDO/OncoKB/CIViC/COSMIC/WHO)."
-        logger.info("Built curated knowledge graph for case %s (dynamic=%s, discovered=%s)", case_id, is_dynamic, has_discovered)
-        return {"nodes": list(nodes.values()), "edges": edges, "source": "curated", "source_message": msg}
+        logger.info(
+            "Built curated knowledge graph for case %s (dynamic=%s, discovered=%s)",
+            case_id,
+            is_dynamic,
+            has_discovered,
+        )
+        return {
+            "nodes": list(nodes.values()),
+            "edges": edges,
+            "source": "curated",
+            "source_message": msg,
+        }
 
     # Query case graph from Fuseki (case_id ya validado como UUID en routes; se revalida por seguridad)
     import uuid as _uuid
+
     case_id = str(_uuid.UUID(str(case_id)))
     query = f"""
     SELECT ?s ?p ?o
@@ -83,22 +96,37 @@ async def get_case_subgraph(
         logger.warning("SPARQL query failed: %s — returning mock/OWL graph", e)
         bindings = []
 
-    nodes: dict[str, dict] = {}
-    edges: list[dict] = []
+    nodes = {}
+    edges = []
 
     for row in bindings:
         s, p, o = row.get("s", ""), row.get("p", ""), row.get("o", "")
         if s and s not in nodes:
-            nodes[s] = {"id": s, "label": s.rsplit("/", 1)[-1], "type": "entity", "iri": s, "source": "ontology"}
+            nodes[s] = {
+                "id": s,
+                "label": s.rsplit("/", 1)[-1],
+                "type": "entity",
+                "iri": s,
+                "source": "ontology",
+            }
         if o and o.startswith("http") and o not in nodes:
-            nodes[o] = {"id": o, "label": o.rsplit("/", 1)[-1], "type": "entity", "iri": o, "source": "ontology"}
+            nodes[o] = {
+                "id": o,
+                "label": o.rsplit("/", 1)[-1],
+                "type": "entity",
+                "iri": o,
+                "source": "ontology",
+            }
         if s and o:
-            edges.append({
-                "source": s, "target": o,
-                "label": p.rsplit("/", 1)[-1] if "/" in p else p,
-                "type": "asserted",
-                "provenance": "fuseki",
-            })
+            edges.append(
+                {
+                    "source": s,
+                    "target": o,
+                    "label": p.rsplit("/", 1)[-1] if "/" in p else p,
+                    "type": "asserted",
+                    "provenance": "fuseki",
+                }
+            )
 
     # If empty: try real OWL ontologies first, then fall back to mock
     if not nodes:
@@ -107,39 +135,165 @@ async def get_case_subgraph(
             reason += f" Fuseki devolvió: {fuseki_error[:200]}"
         ncit = getattr(settings, "ncit_owl_path", "") or ""
         mondo = getattr(settings, "mondo_owl_path", "") or ""
-        nodes, edges = build_case_graph_from_ontology(case_id, ncit_owl_path=ncit, mondo_owl_path=mondo)
+        nodes, edges = build_case_graph_from_ontology(
+            case_id, ncit_owl_path=ncit, mondo_owl_path=mondo
+        )
         if not nodes:
             nodes, edges = _mock_case_graph(case_id)
             logger.info("Using mock graph: %s", reason)
-            return {"nodes": list(nodes.values()), "edges": edges, "source": "mock", "source_message": reason + " OWL returned no data; showing demo mockup graph."}
+            return {
+                "nodes": list(nodes.values()),
+                "edges": edges,
+                "source": "mock",
+                "source_message": reason
+                + " OWL returned no data; showing demo mockup graph.",
+            }
         logger.info("Graph built from OWL ontologies (real)")
         nodes = dict(nodes)
-        return {"nodes": list(nodes.values()), "edges": edges, "source": "owl", "source_message": reason + " Graph built from OWL ontologies (NCIt/MONDO)."}
-    return {"nodes": list(nodes.values()), "edges": edges, "source": "fuseki", "source_message": "Graph loaded from Fuseki (triplestore)."}
+        return {
+            "nodes": list(nodes.values()),
+            "edges": edges,
+            "source": "owl",
+            "source_message": reason + " Graph built from OWL ontologies (NCIt/MONDO).",
+        }
+    return {
+        "nodes": list(nodes.values()),
+        "edges": edges,
+        "source": "fuseki",
+        "source_message": "Graph loaded from Fuseki (triplestore).",
+    }
 
 
 def _mock_case_graph(case_id: str) -> tuple[dict, list]:
     """Generate a representative mock graph for demo."""
     nodes = {
-        "case": {"id": f"case:{case_id}", "label": f"Case {case_id[:8]}", "type": "case", "iri": None, "source": "system"},
-        "tp53": {"id": "ncit:C17359", "label": "TP53", "type": "gene", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359", "source": "ontology"},
-        "egfr": {"id": "ncit:C17757", "label": "EGFR", "type": "gene", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757", "source": "ontology"},
-        "adeno": {"id": "ncit:C2852", "label": "Adenocarcinoma", "type": "diagnosis", "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852", "source": "ontology"},
-        "lepidic": {"id": "pattern:lepidic", "label": "Lepidic", "type": "pattern", "iri": None, "source": "image"},
-        "acinar": {"id": "pattern:acinar", "label": "Acinar", "type": "pattern", "iri": None, "source": "image"},
-        "papillary": {"id": "pattern:papillary", "label": "Papillary", "type": "pattern", "iri": None, "source": "image"},
-        "cribriform": {"id": "pattern:cribriform", "label": "Cribriform", "type": "pattern", "iri": None, "source": "image"},
-        "nsclc": {"id": "mondo:0005233", "label": "NSCLC", "type": "diagnosis", "iri": "http://purl.obolibrary.org/obo/MONDO_0005233", "source": "ontology"},
+        "case": {
+            "id": f"case:{case_id}",
+            "label": f"Case {case_id[:8]}",
+            "type": "case",
+            "iri": None,
+            "source": "system",
+        },
+        "tp53": {
+            "id": "ncit:C17359",
+            "label": "TP53",
+            "type": "gene",
+            "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359",
+            "source": "ontology",
+        },
+        "egfr": {
+            "id": "ncit:C17757",
+            "label": "EGFR",
+            "type": "gene",
+            "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757",
+            "source": "ontology",
+        },
+        "adeno": {
+            "id": "ncit:C2852",
+            "label": "Adenocarcinoma",
+            "type": "diagnosis",
+            "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852",
+            "source": "ontology",
+        },
+        "lepidic": {
+            "id": "pattern:lepidic",
+            "label": "Lepidic",
+            "type": "pattern",
+            "iri": None,
+            "source": "image",
+        },
+        "acinar": {
+            "id": "pattern:acinar",
+            "label": "Acinar",
+            "type": "pattern",
+            "iri": None,
+            "source": "image",
+        },
+        "papillary": {
+            "id": "pattern:papillary",
+            "label": "Papillary",
+            "type": "pattern",
+            "iri": None,
+            "source": "image",
+        },
+        "cribriform": {
+            "id": "pattern:cribriform",
+            "label": "Cribriform",
+            "type": "pattern",
+            "iri": None,
+            "source": "image",
+        },
+        "nsclc": {
+            "id": "mondo:0005233",
+            "label": "NSCLC",
+            "type": "diagnosis",
+            "iri": "http://purl.obolibrary.org/obo/MONDO_0005233",
+            "source": "ontology",
+        },
     }
     edges = [
-        {"source": f"case:{case_id}", "target": "ncit:C2852", "label": "hasDiagnosis", "type": "asserted", "provenance": "ehr"},
-        {"source": f"case:{case_id}", "target": "pattern:lepidic", "label": "hasPattern", "type": "asserted", "provenance": "image"},
-        {"source": f"case:{case_id}", "target": "pattern:acinar", "label": "hasPattern", "type": "asserted", "provenance": "image"},
-        {"source": f"case:{case_id}", "target": "pattern:papillary", "label": "hasPattern", "type": "asserted", "provenance": "image"},
-        {"source": f"case:{case_id}", "target": "pattern:cribriform", "label": "hasPattern", "type": "asserted", "provenance": "image"},
-        {"source": "ncit:C2852", "target": "mondo:0005233", "label": "subClassOf", "type": "asserted", "provenance": "ontology"},
-        {"source": "pattern:lepidic", "target": "ncit:C17359", "label": "associatedWith", "type": "inferred", "provenance": "thesis"},
-        {"source": "pattern:acinar", "target": "ncit:C17757", "label": "associatedWith", "type": "inferred", "provenance": "thesis"},
-        {"source": "ncit:C17359", "target": "ncit:C2852", "label": "mutatedIn", "type": "asserted", "provenance": "ontology"},
+        {
+            "source": f"case:{case_id}",
+            "target": "ncit:C2852",
+            "label": "hasDiagnosis",
+            "type": "asserted",
+            "provenance": "ehr",
+        },
+        {
+            "source": f"case:{case_id}",
+            "target": "pattern:lepidic",
+            "label": "hasPattern",
+            "type": "asserted",
+            "provenance": "image",
+        },
+        {
+            "source": f"case:{case_id}",
+            "target": "pattern:acinar",
+            "label": "hasPattern",
+            "type": "asserted",
+            "provenance": "image",
+        },
+        {
+            "source": f"case:{case_id}",
+            "target": "pattern:papillary",
+            "label": "hasPattern",
+            "type": "asserted",
+            "provenance": "image",
+        },
+        {
+            "source": f"case:{case_id}",
+            "target": "pattern:cribriform",
+            "label": "hasPattern",
+            "type": "asserted",
+            "provenance": "image",
+        },
+        {
+            "source": "ncit:C2852",
+            "target": "mondo:0005233",
+            "label": "subClassOf",
+            "type": "asserted",
+            "provenance": "ontology",
+        },
+        {
+            "source": "pattern:lepidic",
+            "target": "ncit:C17359",
+            "label": "associatedWith",
+            "type": "inferred",
+            "provenance": "thesis",
+        },
+        {
+            "source": "pattern:acinar",
+            "target": "ncit:C17757",
+            "label": "associatedWith",
+            "type": "inferred",
+            "provenance": "thesis",
+        },
+        {
+            "source": "ncit:C17359",
+            "target": "ncit:C2852",
+            "label": "mutatedIn",
+            "type": "asserted",
+            "provenance": "ontology",
+        },
     ]
     return nodes, edges

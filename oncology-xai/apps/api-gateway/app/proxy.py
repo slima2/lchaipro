@@ -19,36 +19,106 @@ _DEV_MODE = (
 
 logger = logging.getLogger(__name__)
 
-_CLIENT_FORBIDDEN_HEADERS = {"host", "x-user-id", "x-correlation-id", "x-forwarded-user", "x-roles"}
+_CLIENT_FORBIDDEN_HEADERS = {
+    "host",
+    "x-user-id",
+    "x-correlation-id",
+    "x-forwarded-user",
+    "x-roles",
+}
 
 # Route → upstream + required roles
 ROUTE_MAP: list[dict[str, Any]] = [
     # Case service (patients, cases CRUD)
-    {"prefix": "/patients", "upstream": "case_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/cases", "upstream": "case_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/patients",
+        "upstream": "case_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/cases",
+        "upstream": "case_service_url",
+        "roles": ["clinician", "admin"],
+    },
     # Image service
-    {"prefix": "/artifacts", "upstream": "image_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/images", "upstream": "image_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/artifacts",
+        "upstream": "image_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/images",
+        "upstream": "image_service_url",
+        "roles": ["clinician", "admin"],
+    },
     # Inference service
-    {"prefix": "/jobs", "upstream": "inference_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/results", "upstream": "inference_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/parameters", "upstream": "inference_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/checkpoints", "upstream": "inference_service_url", "roles": ["clinician", "admin"]},
-    {"prefix": "/gene-explain", "upstream": "inference_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/jobs",
+        "upstream": "inference_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/results",
+        "upstream": "inference_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/parameters",
+        "upstream": "inference_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/checkpoints",
+        "upstream": "inference_service_url",
+        "roles": ["clinician", "admin"],
+    },
+    {
+        "prefix": "/gene-explain",
+        "upstream": "inference_service_url",
+        "roles": ["clinician", "admin"],
+    },
     # EHR service
     {"prefix": "/ehr", "upstream": "ehr_service_url", "roles": ["clinician", "admin"]},
     # Graph service
-    {"prefix": "/graphs", "upstream": "graph_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/graphs",
+        "upstream": "graph_service_url",
+        "roles": ["clinician", "admin"],
+    },
     # The webapp calls /graph/gene-associations; without this prefix the gateway returned 404
-    {"prefix": "/graph", "upstream": "graph_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/graph",
+        "upstream": "graph_service_url",
+        "roles": ["clinician", "admin"],
+    },
     # Ontology Admin + DeepSearch + KG
-    {"prefix": "/admin/ontologies", "upstream": "ontology_admin_service_url", "roles": ["admin"]},
-    {"prefix": "/admin/deep-search", "upstream": "ontology_admin_service_url", "roles": ["admin"]},
-    {"prefix": "/admin/kg", "upstream": "ontology_admin_service_url", "roles": ["admin"]},
+    {
+        "prefix": "/admin/ontologies",
+        "upstream": "ontology_admin_service_url",
+        "roles": ["admin"],
+    },
+    {
+        "prefix": "/admin/deep-search",
+        "upstream": "ontology_admin_service_url",
+        "roles": ["admin"],
+    },
+    {
+        "prefix": "/admin/kg",
+        "upstream": "ontology_admin_service_url",
+        "roles": ["admin"],
+    },
     # Audit
-    {"prefix": "/audit", "upstream": "audit_service_url", "roles": ["auditor", "admin"]},
+    {
+        "prefix": "/audit",
+        "upstream": "audit_service_url",
+        "roles": ["auditor", "admin"],
+    },
     # Active Learning
-    {"prefix": "/active-learning", "upstream": "active_learning_service_url", "roles": ["clinician", "admin"]},
+    {
+        "prefix": "/active-learning",
+        "upstream": "active_learning_service_url",
+        "roles": ["clinician", "admin"],
+    },
 ]
 
 
@@ -60,18 +130,30 @@ def create_proxy_router(settings) -> APIRouter:  # type: ignore[no-untyped-def]
         path = request.url.path.replace("/api/v1", "", 1)
         # No permitir recorrer rutas dentro del servicio interno (p. ej. /ehr/../../docs)
         if ".." in path.split("/") or "%2e%2e" in request.url.path.lower():
-            return Response(status_code=400, content=b'{"detail":"Invalid path"}', media_type="application/json")
+            return Response(
+                status_code=400,
+                content=b'{"detail":"Invalid path"}',
+                media_type="application/json",
+            )
         url = f"{upstream_base}/api/v1{path}"
         # The access token may arrive as a query parameter (artifact URLs); never forward it upstream.
-        query = urlencode([(k, v) for k, v in request.query_params.multi_items() if k != "access_token"])
+        query = urlencode(
+            [
+                (k, v)
+                for k, v in request.query_params.multi_items()
+                if k != "access_token"
+            ]
+        )
         if query:
             url += f"?{query}"
 
         # Cabeceras de identidad y trazas las pone solo el gateway: se descartan las que envía el cliente
         # (comparación sin distinguir mayúsculas; si no, httpx reenvía las dos y el servicio lee la del cliente).
         headers = {
-            k: v for k, v in request.headers.items()
-            if k.lower() not in _CLIENT_FORBIDDEN_HEADERS and not k.lower().startswith("x-user")
+            k: v
+            for k, v in request.headers.items()
+            if k.lower() not in _CLIENT_FORBIDDEN_HEADERS
+            and not k.lower().startswith("x-user")
         }
         cid = getattr(request.state, "correlation_id", None)
         if cid:
@@ -84,7 +166,11 @@ def create_proxy_router(settings) -> APIRouter:  # type: ignore[no-untyped-def]
             headers["X-User-Id"] = "dev-user"
 
         body = await request.body()
-        timeout = httpx.Timeout(600.0, connect=30.0) if len(body) > 10_000_000 else httpx.Timeout(120.0)
+        timeout = (
+            httpx.Timeout(600.0, connect=30.0)
+            if len(body) > 10_000_000
+            else httpx.Timeout(120.0)
+        )
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.request(
                 method=request.method,
