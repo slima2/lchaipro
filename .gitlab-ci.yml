@@ -64,6 +64,20 @@ CHART-3-scan-images:
         mv images.filtered images.txt
       fi
 
+# trivy 0.58.1 descarga el bundle de checks más reciente, que trae reglas que esa versión
+# no sabe parsear ([rego] errors); se usan los checks embebidos. El bundle ya descargado
+# vive en la caché compartida trivy-db y se usaría igual, por eso se borra.
+CHART-4-scan-config:
+  variables:
+    TRIVY_SKIP_CHECK_UPDATE: "true"
+  before_script:
+    - rm -rf "${TRIVY_CACHE_DIR}/policy"
+
+# El escaneo de secretos no usa la DB de vulnerabilidades: la caché trivy-db heredada
+# nunca se genera aquí y solo produce warnings "No files to cache".
+CHART-6-scan-secrets:
+  cache: []
+
 # Desactivar automerge del chart-scan (usamos merge-to-master custom)
 CHART-7-automerge:
   rules:

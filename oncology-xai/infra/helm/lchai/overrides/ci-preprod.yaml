@@ -11,6 +11,7 @@ image:
   tag: "0.0.0"
 storage:
   className: exascaler-lustre-class
+  fixPermissions: true
 ingress:
   provider: none
   tls:

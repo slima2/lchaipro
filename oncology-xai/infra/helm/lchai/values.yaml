@@ -30,6 +30,7 @@ nodeSelector:
 # StorageClass de los discos persistentes. "" = la clase por defecto del cluster
 storage:
   className: gp2
+  fixPermissions: false   # true en discos Lustre: initContainer que abre permisos de rabbitmq, fuseki y s3 (corren sin root)
 
 ingress:
   # alb (AWS) | nginx (ingress-nginx, con las anotaciones que lchai necesita) | traefik | generic (cualquier otro)
@@ -54,7 +55,7 @@ postgres:
 # Apagado en AWS (la base ya existe); encendido en minikube y Telconet.
 dbSchema:
   enabled: false
-  image: postgres:16-alpine
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/postgres:16.15-r1
 
 redis:
   host: lchai-prod-redis.wgz0ng.0001.use1.cache.amazonaws.com
@@ -77,9 +78,10 @@ keycloak:
   realm: oncology
   # Obligatoria: pasarla con --set keycloak.adminPassword=... (nunca en el repo)
   adminPassword: ""
-  image: quay.io/keycloak/keycloak:23.0.7
-  # Modo producción detrás del ingress (TLS termina en el ingress)
-  args: ["start", "--http-enabled=true", "--proxy=edge", "--hostname-strict=false"]
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/keycloak:26.8.1-r1
+  # Modo producción detrás del ingress (TLS termina en el ingress; X-Forwarded-* vía KC_PROXY_HEADERS).
+  # --optimized: la imagen ya trae el build (postgres + health), no reaugmenta al arrancar.
+  args: ["start", "--optimized", "--http-enabled=true", "--hostname-strict=false"]
   # La consola de administración (/admin) y el realm master no se publican por el ingress.
   # Para administrar: kubectl port-forward svc/keycloak 8080:8080
   exposeAdmin: false
@@ -89,14 +91,14 @@ keycloak:
   importRealm: false
 
 rabbitmq:
-  image: rabbitmq:4.1.8-management-alpine
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/rabbitmq:4.1.8-management-alpine
   username: lchai
   password: ""          # obligatoria (--set)
   replicas: 1
   storage: 5Gi
 
 fuseki:
-  image: stain/jena-fuseki@sha256:b1d0c96f19adddef417520184471ac816cf36c6e72936a88ea02b29f4305929a   # 5.1.0
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/fuseki:6.2.0-r1   # Jena Fuseki 6.2.0
   adminPassword: ""     # obligatoria (--set)
   storage: 10Gi
 
@@ -159,14 +161,14 @@ secrets:
 localDeps:
   enabled: false
   postgres:
-    image: postgres:16-alpine
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/postgres:16.15-r1
     storage: 5Gi
     fixPermissions: false   # true en discos Lustre (initContainer root que abre permisos; postgres corre como uid 70)
   redis:
-    image: redis:7-alpine
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/redis:7-alpine
   s3:
-    image: chrislusf/seaweedfs:4.48
-    awsCliImage: amazon/aws-cli:2.17.0
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/seaweedfs:4.51-r1
+    awsCliImage: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/aws-cli:2.39.2
     storage: 20Gi
     host: ""          # host público para las URL firmadas (ingress)
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)

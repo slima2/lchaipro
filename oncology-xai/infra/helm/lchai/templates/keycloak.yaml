@@ -14,10 +14,12 @@ spec:
         app: keycloak
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
+      {{- include "lchai.depPodContext" (dict "gid" 0) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image }}
+          {{- include "lchai.depContext" (dict "uid" 1000 "gid" 0) | nindent 10 }}
           args:
             {{- toYaml .Values.keycloak.args | nindent 12 }}
             {{- if .Values.keycloak.importRealm }}
@@ -25,18 +27,18 @@ spec:
             {{- end }}
           ports:
             - containerPort: 8080
+            - name: management
+              containerPort: 9000
           env:
-            - name: KEYCLOAK_ADMIN
+            # Keycloak 26: KC_BOOTSTRAP_ADMIN_* reemplaza a KEYCLOAK_ADMIN*. La imagen es "optimizada"
+            # (db=postgres y health ya aplicados en el build), por eso se arranca con --optimized.
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: admin
-            - name: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: lchai-secrets
                   key: KEYCLOAK_ADMIN_PASSWORD
-            - name: KC_HEALTH_ENABLED
-              value: "true"
-            - name: KC_DB
-              value: postgres
             - name: KC_DB_URL
               value: "jdbc:postgresql://{{ .Values.postgres.host }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}"
             - name: KC_DB_USERNAME
@@ -46,33 +48,40 @@ spec:
                 secretKeyRef:
                   name: lchai-secrets
                   key: POSTGRES_PASSWORD
-            - name: KC_PROXY
-              value: edge
+            # TLS termina en el ingress: respeta X-Forwarded-* (reemplaza a KC_PROXY=edge, retirado en Keycloak 26)
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
             {{- with include "lchai.effectivePublicUrl" . }}
             # URL pública fija: si no, Keycloak la arma con el puerto que le informa el ingress
-            - name: KC_HOSTNAME_URL
+            # (KC_HOSTNAME / KC_HOSTNAME_ADMIN reemplazan a KC_HOSTNAME_URL / KC_HOSTNAME_ADMIN_URL)
+            - name: KC_HOSTNAME
               value: {{ . | quote }}
-            - name: KC_HOSTNAME_ADMIN_URL
+            - name: KC_HOSTNAME_ADMIN
               value: {{ . | quote }}
             {{- end }}
           # Sin probes el pod figura listo antes de atender y el login da 502 mientras arranca.
           # La primera vez crea el esquema e importa el realm: puede tardar varios minutos.
+          # Desde Keycloak 25 /health/* sale por la interfaz de gestión (puerto 9000), no por el 8080.
           startupProbe:
-            httpGet: { path: /health/started, port: 8080 }
+            httpGet: { path: /health/started, port: 9000 }
             periodSeconds: 10
             failureThreshold: 60
           readinessProbe:
-            httpGet: { path: /health/ready, port: 8080 }
+            httpGet: { path: /health/ready, port: 9000 }
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /health/live, port: 8080 }
+            httpGet: { path: /health/live, port: 9000 }
             periodSeconds: 20
             failureThreshold: 6
-          {{- if .Values.keycloak.importRealm }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /opt/keycloak/data
+            {{- if .Values.keycloak.importRealm }}
             - name: realm
               mountPath: /opt/keycloak/data/import
-          {{- end }}
+            {{- end }}
           resources:
             requests:
               cpu: 500m
@@ -80,12 +89,18 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-      {{- if .Values.keycloak.importRealm }}
       volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: data
+          emptyDir:
+            sizeLimit: 256Mi
+        {{- if .Values.keycloak.importRealm }}
         - name: realm
           configMap:
             name: lchai-keycloak-realm
-      {{- end }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -26,11 +26,13 @@ spec:
         app: db-schema
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
+      {{- include "lchai.depPodContext" (dict "gid" 70) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       restartPolicy: OnFailure
       containers:
         - name: psql
           image: {{ .Values.dbSchema.image }}
+          {{- include "lchai.depContext" (dict "uid" 70 "gid" 70) | nindent 10 }}
           command: ["/bin/sh", "-c"]
           args:
             - |

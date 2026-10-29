@@ -97,6 +97,59 @@ API de Kubernetes y el chart no usa roles IAM por cuenta de servicio (IRSA), as�
 automountServiceAccountToken: false
 {{- end -}}
 
+{{/*
+Dependencias de terceros (imágenes parcheadas en deps/): pod con fsGroup y seccomp, y contenedor sin root, sin
+escalada, sin capabilities y con el sistema de archivos raíz de solo lectura (las rutas escribibles van en emptyDir).
+Uso: include "lchai.depPodContext" (dict "gid" 70) / include "lchai.depContext" (dict "uid" 70 "gid" 70)
+*/}}
+{{- define "lchai.depPodContext" -}}
+securityContext:
+  {{- if .gid }}
+  fsGroup: {{ .gid }}
+  fsGroupChangePolicy: OnRootMismatch
+  {{- end }}
+  seccompProfile:
+    type: RuntimeDefault
+{{- end -}}
+
+{{- define "lchai.depContext" -}}
+securityContext:
+  runAsNonRoot: true
+  runAsUser: {{ .uid }}
+  runAsGroup: {{ .gid }}
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+{{- end -}}
+
+{{/*
+Discos Lustre (CSI): fsGroup no se aplica y el volumen llega con dueño root. initContainer mínimo que abre
+los permisos del punto de montaje (solo con storage.fixPermissions=true). Uso: dict "image" .. "path" .. "volume" ..
+*/}}
+{{- define "lchai.fixPermsInit" -}}
+- name: fix-permissions
+  image: {{ .image }}
+  command: ["sh", "-c", "chmod a+rwx {{ .path }}"]
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+  volumeMounts:
+    - name: {{ .volume }}
+      mountPath: {{ .path }}
+{{- end -}}
+
 {{/* Contenedores de las imágenes propias de lchai (corren sin root desde sec-20261029) */}}
 {{- define "lchai.containerHardening" -}}
 {{- if .Values.podSecurity.hardened }}
