@@ -48,15 +48,19 @@ GENES = GENES_V2
 
 # Checkpoint label mapping (from training)
 _CK_ID2LABEL: dict[int, str] = {
-    0: "micropapillary", 1: "cribriform", 2: "papillary",
-    3: "lepidic", 4: "solid", 5: "acinar",
+    0: "micropapillary",
+    1: "cribriform",
+    2: "papillary",
+    3: "lepidic",
+    4: "solid",
+    5: "acinar",
 }
-
 
 
 @dataclass
 class InferenceConfig:
     """Configuration for a single inference run."""
+
     image_uri: str = ""
     image_format: str | None = None
     tile_size: int = 224
@@ -82,17 +86,19 @@ class InferenceConfig:
 @dataclass
 class MutationReportEntry:
     """v2 per-gene mutation prediction with confidence labelling."""
+
     gene: str = ""
     probability: float = 0.0
-    label: str = "Inconclusive"   # Conclusive | Inconclusive
+    label: str = "Inconclusive"  # Conclusive | Inconclusive
     auroc_threshold: float = 0.70
     disclaimer: str | None = None
-    method: str = "abmil"         # abmil | choquet
+    method: str = "abmil"  # abmil | choquet
 
 
 @dataclass
 class SHAPDecompositionEntry:
     """v2 SHAP decomposition per gene: embedding vs pattern contribution."""
+
     gene: str = ""
     embedding_contribution_pct: float = 0.0
     pattern_contribution_pct: float = 0.0
@@ -104,6 +110,7 @@ class SHAPDecompositionEntry:
 @dataclass
 class ChoquetShapleyEntry:
     """v2 Choquet Shapley values + interaction indices per gene."""
+
     gene: str = ""
     shapley_values: dict[str, float] = field(default_factory=dict)
     interaction_indices: dict[str, float] = field(default_factory=dict)
@@ -112,6 +119,7 @@ class ChoquetShapleyEntry:
 @dataclass
 class InferenceResult:
     """Complete result of an inference run (v2)."""
+
     pattern_scores: dict[str, float] = field(default_factory=dict)
     pattern_percentages: dict[str, float] = field(default_factory=dict)
     predominant_pattern: str = ""
@@ -121,7 +129,7 @@ class InferenceResult:
     attention_overlay_bytes: bytes = b""
     combined_overlay_bytes: bytes = b""
     embedding: np.ndarray | None = None
-    tile_embeddings: np.ndarray | None = None   # (N, 512) per-tile
+    tile_embeddings: np.ndarray | None = None  # (N, 512) per-tile
     tile_pattern_probs: np.ndarray | None = None  # (N, 6) per-tile
     n_tiles: int = 0
     tile_coords: list[tuple[int, int]] = field(default_factory=list)
@@ -173,11 +181,12 @@ def _load_real_pipeline(checkpoint_path: str, device: str = "cpu") -> dict[str, 
     if checkpoint_path in _MODEL_CACHE:
         return _MODEL_CACHE[checkpoint_path]
 
-
     from app.ml.models.ctranspath_backbone import CTransPathPipeline
 
     model = CTransPathPipeline.from_finetuned(checkpoint_path, device)
-    classifier_info = CTransPathPipeline.load_classifier_weights(checkpoint_path, device)
+    classifier_info = CTransPathPipeline.load_classifier_weights(
+        checkpoint_path, device
+    )
 
     pipeline = {
         "model": model,
@@ -191,8 +200,10 @@ def _load_real_pipeline(checkpoint_path: str, device: str = "cpu") -> dict[str, 
     _MODEL_CACHE[checkpoint_path] = pipeline
     logger.info(
         "CTransPath pipeline ready: %d classes, embed=%d, s=%.2f, img=%d",
-        pipeline["num_classes"], pipeline["embed_dim"],
-        pipeline["s_scale"], pipeline["img_size"],
+        pipeline["num_classes"],
+        pipeline["embed_dim"],
+        pipeline["s_scale"],
+        pipeline["img_size"],
     )
     return pipeline
 
@@ -200,6 +211,7 @@ def _load_real_pipeline(checkpoint_path: str, device: str = "cpu") -> dict[str, 
 # ═══════════════════════════════════════════════════════════════════════
 # MOCK ML COMPONENTS (used when model_backend == "mock")
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _mock_tile_inference(n_tiles: int) -> dict[str, list[float]]:
     """Generate mock pattern scores per tile."""
@@ -212,7 +224,9 @@ def _mock_tile_inference(n_tiles: int) -> dict[str, list[float]]:
     return scores
 
 
-def _mock_mutation_prediction(profile: dict[str, float]) -> tuple[dict[str, float], dict[str, str]]:
+def _mock_mutation_prediction(
+    profile: dict[str, float],
+) -> tuple[dict[str, float], dict[str, str]]:
     """Generate mock mutation scores from morphologic profile."""
     rng = np.random.default_rng(123)
     scores = {}
@@ -233,7 +247,10 @@ def _mock_mutation_prediction(profile: dict[str, float]) -> tuple[dict[str, floa
 # CORE INFERENCE PIPELINE
 # ═══════════════════════════════════════════════════════════════════════
 
-def _tile_image(img: Image.Image, tile_size: int = 224, overlap: int = 0) -> list[tuple[int, int, Image.Image]]:
+
+def _tile_image(
+    img: Image.Image, tile_size: int = 224, overlap: int = 0
+) -> list[tuple[int, int, Image.Image]]:
     """Split image into tiles. Returns list of (x, y, tile_image)."""
     w, h = img.size
     step = tile_size - overlap
@@ -248,8 +265,13 @@ def _tile_image(img: Image.Image, tile_size: int = 224, overlap: int = 0) -> lis
     return tiles
 
 
-def _build_overlay(img: Image.Image, tile_coords: list[tuple[int, int]],
-                   tile_labels: list[str], tile_size: int, alpha: int = 100) -> bytes:
+def _build_overlay(
+    img: Image.Image,
+    tile_coords: list[tuple[int, int]],
+    tile_labels: list[str],
+    tile_size: int,
+    alpha: int = 100,
+) -> bytes:
     """Build RGBA overlay with Gaussian-smoothed pattern regions.
 
     Instead of hard rectangles, each tile's center is painted as a soft blob
@@ -272,7 +294,7 @@ def _build_overlay(img: Image.Image, tile_coords: list[tuple[int, int]],
     xs = np.arange(tile_size, dtype=np.float32) - half
     gx, gy = np.meshgrid(xs, ys)
     sigma = tile_size * 0.38
-    gaussian_kernel = np.exp(-(gx ** 2 + gy ** 2) / (2 * sigma ** 2))
+    gaussian_kernel = np.exp(-(gx**2 + gy**2) / (2 * sigma**2))
 
     for (tx, ty), label in zip(tile_coords, tile_labels):
         color = PATTERN_PALETTE.get(label, (128, 128, 128))
@@ -363,7 +385,9 @@ def _generate_shap_mock(profile: dict[str, float], gene: str) -> dict[str, bytes
     return artifacts
 
 
-def _generate_shap_real(profile: dict[str, float], gene: str, model_dir: str) -> dict[str, bytes]:
+def _generate_shap_real(
+    profile: dict[str, float], gene: str, model_dir: str
+) -> dict[str, bytes]:
     """Generate real SHAP artifacts using XGBoost + TreeExplainer.
 
     Adapted from thesis: SLIMA_histology_mutation_xgboost_rev3.
@@ -372,6 +396,7 @@ def _generate_shap_real(profile: dict[str, float], gene: str, model_dir: str) ->
         import matplotlib
         import shap
         import xgboost as xgb
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -391,7 +416,9 @@ def _generate_shap_real(profile: dict[str, float], gene: str, model_dir: str) ->
 
         # Bar plot
         fig, ax = plt.subplots(figsize=(8, 5))
-        shap.summary_plot(shap_values, X, feature_names=feature_names, plot_type="bar", show=False)
+        shap.summary_plot(
+            shap_values, X, feature_names=feature_names, plot_type="bar", show=False
+        )
         buf = io.BytesIO()
         plt.savefig(buf, format="png", bbox_inches="tight", dpi=150)
         plt.close(fig)
@@ -407,7 +434,8 @@ def _generate_shap_real(profile: dict[str, float], gene: str, model_dir: str) ->
 
         # Force plot
         fig = shap.force_plot(
-            explainer.expected_value if isinstance(explainer.expected_value, float)
+            explainer.expected_value
+            if isinstance(explainer.expected_value, float)
             else explainer.expected_value[1],
             shap_values[0] if shap_values.ndim == 2 else shap_values[1][0],
             X[0],
@@ -449,8 +477,12 @@ def _convert_to_pyramidal_tiff(input_path: str, source_format: str = "tif") -> s
 
     import pyvips
 
-    logger.info("Converting %s to pyramidal TIFF: %s (%.1f MB)",
-                source_format.upper(), input_path, os.path.getsize(input_path) / 1e6)
+    logger.info(
+        "Converting %s to pyramidal TIFF: %s (%.1f MB)",
+        source_format.upper(),
+        input_path,
+        os.path.getsize(input_path) / 1e6,
+    )
 
     try:
         img = pyvips.Image.new_from_file(input_path, access="sequential")
@@ -504,8 +536,7 @@ def _validate_wsi_quality(slide, image_format: str) -> list[str]:
         )
 
     # Check MPP from OpenSlide properties
-    mpp_x = slide.properties.get('openslide.mpp-x')
-    mpp_y = slide.properties.get('openslide.mpp-y')
+    mpp_x = slide.properties.get("openslide.mpp-x")
     if mpp_x:
         mpp = float(mpp_x)
         mag = 10.0 / mpp if mpp > 0 else 0
@@ -521,8 +552,9 @@ def _validate_wsi_quality(slide, image_format: str) -> list[str]:
     # Check for non-H&E staining by analyzing color distribution of thumbnail
     thumb = slide.get_thumbnail((512, 512))
     import numpy as np
+
     arr = np.array(thumb.convert("RGB"))
-    r, g, b = arr[:,:,0].mean(), arr[:,:,1].mean(), arr[:,:,2].mean()
+    r, g, b = arr[:, :, 0].mean(), arr[:, :, 1].mean(), arr[:, :, 2].mean()
 
     # H&E tissue is predominantly pink (R>G, R>B) or purple (R~B>G)
     # IHC/special stains: brown (DAB), blue-only (alcian blue), red-only (PAS)
@@ -545,7 +577,7 @@ def _validate_wsi_quality(slide, image_format: str) -> list[str]:
     very_dark_pct = (gray < 60).mean()
     if very_dark_pct > 0.15:
         warnings.append(
-            f"TISSUE FOLDS: {very_dark_pct*100:.0f}% of the slide contains very dark regions, "
+            f"TISSUE FOLDS: {very_dark_pct * 100:.0f}% of the slide contains very dark regions, "
             f"likely tissue folds or thick areas. These artifacts may affect pattern classification."
         )
 
@@ -569,13 +601,19 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
     _WSI_SLIDE_HANDLE = None
 
     fmt = (image_format or "").lower().strip()
-    logger.info("_decode_image: format=%r, bytes=%d, fmt=%r", image_format, len(image_bytes), fmt)
+    logger.info(
+        "_decode_image: format=%r, bytes=%d, fmt=%r",
+        image_format,
+        len(image_bytes),
+        fmt,
+    )
     if fmt in ("svs", "tif", "tiff", "bif"):
         try:
             import os
             import tempfile
 
             import openslide
+
             suffix = {"svs": ".svs", "bif": ".bif"}.get(fmt, ".tif")
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
                 f.write(image_bytes)
@@ -589,11 +627,17 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
                 thumb = slide.get_thumbnail((4096, 4096))
                 logger.info(
                     "OpenSlide WSI opened: dims=%s, thumbnail=%s, warnings=%d",
-                    slide.dimensions, thumb.size, len(quality_warnings),
+                    slide.dimensions,
+                    thumb.size,
+                    len(quality_warnings),
                 )
                 return thumb.convert("RGB")
             except Exception as openslide_err:
-                logger.warning("OpenSlide failed for %s: %s — attempting pyramidal conversion via pyvips", fmt, openslide_err)
+                logger.warning(
+                    "OpenSlide failed for %s: %s — attempting pyramidal conversion via pyvips",
+                    fmt,
+                    openslide_err,
+                )
                 try:
                     os.unlink(path)
                 except OSError:
@@ -602,10 +646,14 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
                 if fmt in ("tif", "tiff", "bif"):
                     try:
                         src_suffix = {"bif": ".bif"}.get(fmt, ".tif")
-                        with tempfile.NamedTemporaryFile(suffix=src_suffix, delete=False) as f2:
+                        with tempfile.NamedTemporaryFile(
+                            suffix=src_suffix, delete=False
+                        ) as f2:
                             f2.write(image_bytes)
                             src_path = f2.name
-                        pyramidal_path = _convert_to_pyramidal_tiff(src_path, source_format=fmt)
+                        pyramidal_path = _convert_to_pyramidal_tiff(
+                            src_path, source_format=fmt
+                        )
                         try:
                             os.unlink(src_path)
                         except OSError:
@@ -617,11 +665,16 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
                         thumb = slide.get_thumbnail((4096, 4096))
                         logger.info(
                             "OpenSlide WSI opened (converted from %s): dims=%s, thumbnail=%s, warnings=%d",
-                            fmt.upper(), slide.dimensions, thumb.size, len(quality_warnings),
+                            fmt.upper(),
+                            slide.dimensions,
+                            thumb.size,
+                            len(quality_warnings),
                         )
                         return thumb.convert("RGB")
                     except Exception as conv_err:
-                        logger.error("Pyramidal conversion failed for %s: %s", fmt, conv_err)
+                        logger.error(
+                            "Pyramidal conversion failed for %s: %s", fmt, conv_err
+                        )
                         if pyramidal_path:
                             try:
                                 os.unlink(pyramidal_path)
@@ -632,7 +685,9 @@ def _decode_image(image_bytes: bytes, image_format: str | None) -> Image.Image:
                             f"Pyramidal conversion error: {conv_err}"
                         ) from conv_err
                 else:
-                    raise ValueError(f"WSI decode failed for {fmt}: {openslide_err}") from openslide_err
+                    raise ValueError(
+                        f"WSI decode failed for {fmt}: {openslide_err}"
+                    ) from openslide_err
 
         except ImportError as ie:
             logger.error("OpenSlide import failed: %s", ie)
@@ -669,9 +724,12 @@ def _cleanup_wsi():
         try:
             slide.close()
         except Exception:
-            logger.debug("could not close slide", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+            logger.debug(
+                "could not close slide", exc_info=True
+            )  # antes se ignoraba en silencio (Bandit S110)
         try:
             import os
+
             os.unlink(path)
         except OSError:
             pass
@@ -685,7 +743,9 @@ def _is_tcga_slide() -> bool:
     return "TCGA" in (path or "").upper()
 
 
-def _build_tissue_mask(slide, level: int, tile_size: int, ds: int = 32) -> np.ndarray | None:
+def _build_tissue_mask(
+    slide, level: int, tile_size: int, ds: int = 32
+) -> np.ndarray | None:
     """Build a binary tissue mask using Otsu thresholding on a thumbnail.
 
     Returns a boolean array at tile-grid resolution where True = tissue.
@@ -737,14 +797,21 @@ def _build_tissue_mask(slide, level: int, tile_size: int, ds: int = 32) -> np.nd
         n_x = (w - tile_size) // tile_size + 1
         n_y = (h - tile_size) // tile_size + 1
         from PIL import Image as _PIm
+
         mask_pil = _PIm.fromarray(tissue_thumb.astype(np.uint8) * 255)
         mask_grid = mask_pil.resize((n_x, n_y), _PIm.NEAREST)
         mask_arr = np.array(mask_grid) > 127
-        logger.info("Tissue mask: %d/%d grid cells marked as tissue (Otsu t=%.0f)",
-                     mask_arr.sum(), mask_arr.size, best_t)
+        logger.info(
+            "Tissue mask: %d/%d grid cells marked as tissue (Otsu t=%.0f)",
+            mask_arr.sum(),
+            mask_arr.size,
+            best_t,
+        )
         return mask_arr
     except Exception as e:
-        logger.warning("Tissue mask construction failed: %s — proceeding without mask", e)
+        logger.warning(
+            "Tissue mask construction failed: %s — proceeding without mask", e
+        )
         return None
 
 
@@ -769,8 +836,14 @@ def _tile_wsi_full_resolution(
     slide, _ = _WSI_SLIDE_HANDLE
     w, h = slide.level_dimensions[level]
     filter_mode = "TCGA-minimal" if is_tcga else "hospital-full"
-    logger.info("WSI full-resolution tiling: level=%d, dims=(%d, %d), tile=%d, filters=%s",
-                level, w, h, tile_size, filter_mode)
+    logger.info(
+        "WSI full-resolution tiling: level=%d, dims=(%d, %d), tile=%d, filters=%s",
+        level,
+        w,
+        h,
+        tile_size,
+        filter_mode,
+    )
 
     # ── Stage 0: global tissue mask ──
     tissue_mask = _build_tissue_mask(slide, level, tile_size)
@@ -780,7 +853,13 @@ def _tile_wsi_full_resolution(
     n_x = (w - tile_size) // step + 1
     n_y = (h - tile_size) // step + 1
     total_candidates = n_x * n_y
-    logger.info("WSI tile grid: %d x %d = %d candidates (max_tiles=%d)", n_x, n_y, total_candidates, max_tiles)
+    logger.info(
+        "WSI tile grid: %d x %d = %d candidates (max_tiles=%d)",
+        n_x,
+        n_y,
+        total_candidates,
+        max_tiles,
+    )
 
     stride = 1
     if total_candidates > max_tiles * 2:
@@ -843,7 +922,11 @@ def _tile_wsi_full_resolution(
                 continue
 
             # Low saturation
-            r, g, b = arr[:,:,0].astype(float), arr[:,:,1].astype(float), arr[:,:,2].astype(float)
+            r, g, b = (
+                arr[:, :, 0].astype(float),
+                arr[:, :, 1].astype(float),
+                arr[:, :, 2].astype(float),
+            )
             max_rgb = np.maximum(np.maximum(r, g), b)
             min_rgb = np.minimum(np.minimum(r, g), b)
             saturation = np.where(max_rgb > 0, (max_rgb - min_rgb) / max_rgb, 0)
@@ -859,7 +942,9 @@ def _tile_wsi_full_resolution(
             # Non-H&E: pure blue ink, pure red ink, green pen, brown labels
             he_pink = (r > g) & (r > b - 30) & (saturation > 0.03)
             he_purple = (b > g) & (r > g - 15) & (saturation > 0.03)
-            he_pale = (gray > 180) & (saturation < 0.15)  # pale staining is still tissue
+            he_pale = (gray > 180) & (
+                saturation < 0.15
+            )  # pale staining is still tissue
             he_white_bg = gray > 220
             he_compatible = (he_pink | he_purple | he_pale | he_white_bg).mean()
             if he_compatible < 0.30:
@@ -890,7 +975,9 @@ def _tile_wsi_full_resolution(
                     continue
 
                 # Olive/yellow marker
-                olive_marker = ((r > 160) & (g > 140) & (b < 80) & ((r + g) > 3.0 * b)).mean()
+                olive_marker = (
+                    (r > 160) & (g > 140) & (b < 80) & ((r + g) > 3.0 * b)
+                ).mean()
                 if olive_marker > 0.20:
                     rejected_artifact += 1
                     continue
@@ -902,7 +989,9 @@ def _tile_wsi_full_resolution(
                     continue
 
                 # Light blue marker / dye
-                light_blue = ((b > r + 20) & (b > g + 10) & (b > 150) & (saturation > 0.20)).mean()
+                light_blue = (
+                    (b > r + 20) & (b > g + 10) & (b > 150) & (saturation > 0.20)
+                ).mean()
                 if light_blue > 0.25:
                     rejected_artifact += 1
                     continue
@@ -942,9 +1031,16 @@ def _tile_wsi_full_resolution(
         if count >= max_tiles:
             break
 
-    logger.info("WSI tiling complete: %d tissue tiles from %d candidates "
-                "(rejected: %d mask, %d background, %d artifacts, filters=%s)",
-                len(tiles), total_candidates, rejected_mask, rejected_bg, rejected_artifact, filter_mode)
+    logger.info(
+        "WSI tiling complete: %d tissue tiles from %d candidates "
+        "(rejected: %d mask, %d background, %d artifacts, filters=%s)",
+        len(tiles),
+        total_candidates,
+        rejected_mask,
+        rejected_bg,
+        rejected_artifact,
+        filter_mode,
+    )
     return tiles if tiles else None
 
 
@@ -952,7 +1048,10 @@ def _tile_wsi_full_resolution(
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════
 
-def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback=None) -> InferenceResult:
+
+def run_inference(
+    image_bytes: bytes, config: InferenceConfig, progress_callback=None
+) -> InferenceResult:
     """Execute complete v2 inference pipeline.
 
     Steps:
@@ -1001,21 +1100,36 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
     _p(0.12, "Extracting tissue tiles from WSI (filtering artifacts)...")
 
     wsi_tiles = _tile_wsi_full_resolution(
-        tile_size=tile_sz, tissue_threshold=0.15, max_tiles=config.max_tiles_wsi,
+        tile_size=tile_sz,
+        tissue_threshold=0.15,
+        max_tiles=config.max_tiles_wsi,
         image_uri=config.image_uri,
     )
     if wsi_tiles is not None and len(wsi_tiles) > 0:
         tiles = wsi_tiles
-        logger.info("Using full-resolution WSI tiling: %d tissue tiles at %dpx", len(tiles), tile_sz)
+        logger.info(
+            "Using full-resolution WSI tiling: %d tissue tiles at %dpx",
+            len(tiles),
+            tile_sz,
+        )
     else:
         tiles = _tile_image(img, tile_sz, config.overlap)
-        logger.info("Using thumbnail tiling: %d tiles (%dx%d, overlap=%d)", len(tiles), tile_sz, tile_sz, config.overlap)
+        logger.info(
+            "Using thumbnail tiling: %d tiles (%dx%d, overlap=%d)",
+            len(tiles),
+            tile_sz,
+            tile_sz,
+            config.overlap,
+        )
 
     result.n_tiles = len(tiles)
     tile_coords = [(x, y) for x, y, _ in tiles]
     result.tile_coords = tile_coords
     logger.info("Total tiles for inference: %d", len(tiles))
-    _p(0.18, f"Tiling complete: {len(tiles)} tissue tiles. Starting CTransPath inference...")
+    _p(
+        0.18,
+        f"Tiling complete: {len(tiles)} tissue tiles. Starting CTransPath inference...",
+    )
     _p(0.20, f"Running CTransPath on {len(tiles)} tiles...")
 
     # 3-4) Pattern inference
@@ -1043,11 +1157,18 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
         avg_scores[p] = float(np.mean(scores)) if scores else 0.0
 
     total = sum(avg_scores.values())
-    percentages = {p: round((v / total) * 100, 2) if total > 0 else 0.0 for p, v in avg_scores.items()}
+    percentages = {
+        p: round((v / total) * 100, 2) if total > 0 else 0.0
+        for p, v in avg_scores.items()
+    }
     result.pattern_scores = {p: round(v, 4) for p, v in avg_scores.items()}
     result.pattern_percentages = percentages
-    result.predominant_pattern = max(percentages, key=percentages.get) if percentages else ""  # type: ignore[arg-type]
-    result.is_conclusive = {p: avg_scores[p] >= config.pattern_threshold for p in active_patterns}
+    result.predominant_pattern = (
+        max(percentages, key=lambda p: percentages[p]) if percentages else ""
+    )
+    result.is_conclusive = {
+        p: avg_scores[p] >= config.pattern_threshold for p in active_patterns
+    }
 
     # 6) Pattern overlay — scale WSI coords to thumbnail for rendering
     tile_labels = []
@@ -1066,20 +1187,39 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
         scaled_tile = int(tile_sz * min(sx, sy))
         min_visible = max(40, min(thumb_w, thumb_h) // 30)
         overlay_tile_sz = max(min_visible, scaled_tile)
-        logger.info("WSI overlay: thumb=%dx%d, scale=%.4f, scaled_tile=%d, min_visible=%d, overlay_tile_sz=%d",
-                    thumb_w, thumb_h, min(sx, sy), scaled_tile, min_visible, overlay_tile_sz)
-        result.overlay_combined_bytes = _build_overlay(img, overlay_coords, tile_labels, overlay_tile_sz, alpha=160)
+        logger.info(
+            "WSI overlay: thumb=%dx%d, scale=%.4f, scaled_tile=%d, min_visible=%d, overlay_tile_sz=%d",
+            thumb_w,
+            thumb_h,
+            min(sx, sy),
+            scaled_tile,
+            min_visible,
+            overlay_tile_sz,
+        )
+        result.overlay_combined_bytes = _build_overlay(
+            img, overlay_coords, tile_labels, overlay_tile_sz, alpha=160
+        )
     else:
-        result.overlay_combined_bytes = _build_overlay(img, tile_coords, tile_labels, tile_sz)
+        result.overlay_combined_bytes = _build_overlay(
+            img, tile_coords, tile_labels, tile_sz
+        )
 
     # 6b) Build pattern region map for interactive hover
     use_oc = overlay_coords if _WSI_SLIDE_HANDLE is not None else tile_coords
     use_ts = overlay_tile_sz if _WSI_SLIDE_HANDLE is not None else tile_sz
     thumb_w_actual, thumb_h_actual = img.size
     result.pattern_region_map = [
-        {"x": int(tx), "y": int(ty), "w": use_ts, "h": use_ts, "pattern": lbl,
-         "xn": round(tx / thumb_w_actual, 4), "yn": round(ty / thumb_h_actual, 4),
-         "wn": round(use_ts / thumb_w_actual, 4), "hn": round(use_ts / thumb_h_actual, 4)}
+        {
+            "x": int(tx),
+            "y": int(ty),
+            "w": use_ts,
+            "h": use_ts,
+            "pattern": lbl,
+            "xn": round(tx / thumb_w_actual, 4),
+            "yn": round(ty / thumb_h_actual, 4),
+            "wn": round(use_ts / thumb_w_actual, 4),
+            "hn": round(use_ts / thumb_h_actual, 4),
+        }
         for (tx, ty), lbl in zip(use_oc, tile_labels)
     ]
 
@@ -1104,10 +1244,15 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
         if "embeddings" in _REAL_TILE_EMBEDDINGS:
             result.tile_embeddings = _REAL_TILE_EMBEDDINGS["embeddings"]
             result.embedding = result.tile_embeddings.mean(axis=0)
-            logger.info("Using real CTransPath embeddings: shape=%s", result.tile_embeddings.shape)
+            logger.info(
+                "Using real CTransPath embeddings: shape=%s",
+                result.tile_embeddings.shape,
+            )
         else:
             logger.warning("No real embeddings available — falling back to random")
-            result.tile_embeddings = np.random.default_rng(42).normal(size=(n_tiles, 512)).astype(np.float32)
+            result.tile_embeddings = (
+                np.random.default_rng(42).normal(size=(n_tiles, 512)).astype(np.float32)
+            )
             result.embedding = result.tile_embeddings.mean(axis=0)
 
     _p(0.55, "Running mutation prediction (ABMIL/Choquet)...")
@@ -1127,16 +1272,19 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
         )
 
         for gr in abmil_output.gene_results:
-            result.mutation_report.append(MutationReportEntry(
-                gene=gr.gene,
-                probability=gr.probability,
-                label=gr.label,
-                auroc_threshold=gr.auroc_threshold,
-                disclaimer=gr.disclaimer,
-                method=gr.method or "abmil",
-            ))
+            result.mutation_report.append(
+                MutationReportEntry(
+                    gene=gr.gene,
+                    probability=gr.probability,
+                    label=gr.label,
+                    auroc_threshold=gr.auroc_threshold,
+                    disclaimer=gr.disclaimer,
+                    method=gr.method or "abmil",
+                )
+            )
             result.mutation_scores[gr.gene] = gr.probability
             from app.ml.checkpoints.loader import GENE_MUTATION_THRESHOLD
+
             gene_thr = GENE_MUTATION_THRESHOLD.get(gr.gene, config.mutation_threshold)
             status = "POS" if gr.probability >= gene_thr else "NEG"
             result.mutation_status[gr.gene] = status
@@ -1145,39 +1293,56 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
 
         # Build attention heatmap overlay from ABMIL (scale coords for WSI)
         if abmil_output.attention_map is not None and len(tile_coords) > 0:
-            use_coords = overlay_coords if _WSI_SLIDE_HANDLE is not None else tile_coords
+            use_coords = (
+                overlay_coords if _WSI_SLIDE_HANDLE is not None else tile_coords
+            )
             use_tile_sz = overlay_tile_sz if _WSI_SLIDE_HANDLE is not None else tile_sz
 
             result.attention_overlay_bytes = _build_attention_overlay(
-                img, use_coords, abmil_output.attention_map,
-                abmil_output.top_k_indices, use_tile_sz,
+                img,
+                use_coords,
+                abmil_output.attention_map,
+                abmil_output.top_k_indices,
+                use_tile_sz,
             )
 
             comb_alpha = 160 if _WSI_SLIDE_HANDLE is not None else 120
             result.combined_overlay_bytes = _build_combined_overlay(
-                img, use_coords, tile_labels,
-                abmil_output.attention_map, abmil_output.top_k_indices,
-                use_tile_sz, pattern_alpha=comb_alpha,
+                img,
+                use_coords,
+                tile_labels,
+                abmil_output.attention_map,
+                abmil_output.top_k_indices,
+                use_tile_sz,
+                pattern_alpha=comb_alpha,
             )
 
             attn = abmil_output.attention_map
             n_tiles = len(use_coords)
             if n_tiles > 0 and len(attn) >= n_tiles:
-                percentiles = (np.argsort(np.argsort(attn[:n_tiles])) / max(n_tiles - 1, 1)) * 100.0
+                percentiles = (
+                    np.argsort(np.argsort(attn[:n_tiles])) / max(n_tiles - 1, 1)
+                ) * 100.0
                 ranks = np.argsort(-attn[:n_tiles])
                 rank_lookup = np.empty_like(ranks)
                 rank_lookup[ranks] = np.arange(len(ranks))
                 tw, th = img.size
                 result.attention_region_map = [
                     {
-                        "x": int(tx), "y": int(ty), "w": use_tile_sz, "h": use_tile_sz,
-                        "xn": round(tx / tw, 4), "yn": round(ty / th, 4),
-                        "wn": round(use_tile_sz / tw, 4), "hn": round(use_tile_sz / th, 4),
+                        "x": int(tx),
+                        "y": int(ty),
+                        "w": use_tile_sz,
+                        "h": use_tile_sz,
+                        "xn": round(tx / tw, 4),
+                        "yn": round(ty / th, 4),
+                        "wn": round(use_tile_sz / tw, 4),
+                        "hn": round(use_tile_sz / th, 4),
                         "attention": round(float(attn[i]), 6),
                         "attention_rank": int(rank_lookup[i]) + 1,
                         "attention_percentile": round(float(percentiles[i]), 1),
                     }
-                    for i, (tx, ty) in enumerate(use_coords) if i < n_tiles
+                    for i, (tx, ty) in enumerate(use_coords)
+                    if i < n_tiles
                 ]
 
     except Exception as e:
@@ -1204,11 +1369,13 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
                 genes=config.genes,
             )
             for cr in choquet_output.gene_results:
-                result.choquet_shapley.append(ChoquetShapleyEntry(
-                    gene=cr.gene,
-                    shapley_values=cr.shapley_values,
-                    interaction_indices=cr.interaction_indices,
-                ))
+                result.choquet_shapley.append(
+                    ChoquetShapleyEntry(
+                        gene=cr.gene,
+                        shapley_values=cr.shapley_values,
+                        interaction_indices=cr.interaction_indices,
+                    )
+                )
         except Exception as e:
             logger.warning("v2 Choquet pathway failed: %s", e)
 
@@ -1224,11 +1391,17 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
 
         loader2 = CL2(config.v2_checkpoint_dir, config.device)
         result.ablation_results = run_ablation_comparison(
-            result.tile_embeddings, tile_probs_matrix, loader2, genes=config.genes,
+            result.tile_embeddings,
+            tile_probs_matrix,
+            loader2,
+            genes=config.genes,
         )
         result.permutation_results = run_permutation_importance(
-            result.tile_embeddings, tile_probs_matrix, loader2,
-            n_repeats=10, genes=config.genes,
+            result.tile_embeddings,
+            tile_probs_matrix,
+            loader2,
+            n_repeats=10,
+            genes=config.genes,
         )
     except Exception as e:
         logger.warning("Ablation/permutation analysis failed: %s", e)
@@ -1248,18 +1421,24 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
                 try:
                     model = loader.load_abmil(gene, input_dim=concat.shape[1])
                     decomp = run_shap_decomposition(concat, model, gene, config.device)
-                    result.shap_decompositions.append(SHAPDecompositionEntry(
-                        gene=gene,
-                        embedding_contribution_pct=decomp.embedding_contribution_pct,
-                        pattern_contribution_pct=decomp.pattern_contribution_pct,
-                        top_pattern_dims=decomp.top_pattern_dims,
-                        pattern_shap_signed=decomp.pattern_shap_signed,
-                        pattern_shap_directions=decomp.pattern_shap_directions,
-                    ))
+                    result.shap_decompositions.append(
+                        SHAPDecompositionEntry(
+                            gene=gene,
+                            embedding_contribution_pct=decomp.embedding_contribution_pct,
+                            pattern_contribution_pct=decomp.pattern_contribution_pct,
+                            top_pattern_dims=decomp.top_pattern_dims,
+                            pattern_shap_signed=decomp.pattern_shap_signed,
+                            pattern_shap_directions=decomp.pattern_shap_directions,
+                        )
+                    )
                     if decomp.bar_plot_bytes:
-                        result.shap_artifacts[f"shap_decomp_{gene}_bar.png"] = decomp.bar_plot_bytes
+                        result.shap_artifacts[f"shap_decomp_{gene}_bar.png"] = (
+                            decomp.bar_plot_bytes
+                        )
                     if decomp.decomposition_plot_bytes:
-                        result.shap_artifacts[f"shap_decomp_{gene}_patterns.png"] = decomp.decomposition_plot_bytes
+                        result.shap_artifacts[f"shap_decomp_{gene}_patterns.png"] = (
+                            decomp.decomposition_plot_bytes
+                        )
                 except Exception as e:
                     logger.warning("SHAP decomposition failed for %s: %s", gene, e)
         except Exception as e:
@@ -1272,7 +1451,9 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
             if config.model_backend == "mock":
                 shap_arts = _generate_shap_mock(pct_features, gene)
             else:
-                shap_arts = _generate_shap_real(pct_features, gene, config.mutation_model_dir)
+                shap_arts = _generate_shap_real(
+                    pct_features, gene, config.mutation_model_dir
+                )
             result.shap_artifacts.update(shap_arts)
 
     # Metrics
@@ -1295,9 +1476,11 @@ def run_inference(image_bytes: bytes, config: InferenceConfig, progress_callback
 
     logger.info(
         "v2 Inference complete: %d tiles, predominant=%s (%.1f%%), mutations=%d genes, time=%.2fs",
-        result.n_tiles, result.predominant_pattern,
+        result.n_tiles,
+        result.predominant_pattern,
         percentages.get(result.predominant_pattern, 0),
-        len(result.mutation_report), elapsed,
+        len(result.mutation_report),
+        elapsed,
     )
 
     result.quality_warnings = _IMAGE_QUALITY_WARNINGS.copy()
@@ -1319,6 +1502,7 @@ def _tissue_mask_from_image(pil_img: Image.Image) -> np.ndarray:
     # Slight closing so tile-level holes inside tissue don't break the mask.
     kernel = np.ones((9, 9), np.uint8)
     import cv2 as _cv2
+
     mask = _cv2.morphologyEx(mask, _cv2.MORPH_CLOSE, kernel)
     return mask
 
@@ -1352,10 +1536,14 @@ def _build_attention_overlay(
     xs = np.arange(render_size, dtype=np.float32) - half
     gx, gy = np.meshgrid(xs, ys)
     sigma = render_size * 0.42
-    gaussian = np.exp(-(gx ** 2 + gy ** 2) / (2 * sigma ** 2))
+    gaussian = np.exp(-(gx**2 + gy**2) / (2 * sigma**2))
 
     top_set = set(top_k_indices)
-    top_weights = attention_weights[list(top_k_indices)] if len(top_k_indices) > 0 else np.array([1.0])
+    top_weights = (
+        attention_weights[list(top_k_indices)]
+        if len(top_k_indices) > 0
+        else np.array([1.0])
+    )
     w_min, w_max = top_weights.min(), top_weights.max()
     w_range = w_max - w_min if w_max > w_min else 1e-8
 
@@ -1382,15 +1570,20 @@ def _build_attention_overlay(
         heat /= heat.max()
 
     heat_blur = Image.fromarray((heat * 255).astype(np.uint8), "L")
-    heat_blur = heat_blur.filter(ImageFilter.GaussianBlur(radius=max(render_size // 3, 6)))
+    heat_blur = heat_blur.filter(
+        ImageFilter.GaussianBlur(radius=max(render_size // 3, 6))
+    )
     heat = np.array(heat_blur).astype(np.float32) / 255.0
 
     # Cyan fill on original
-    cyan = np.stack([
-        np.zeros_like(heat),
-        heat * 255,
-        heat * 255,
-    ], axis=2)
+    cyan = np.stack(
+        [
+            np.zeros_like(heat),
+            heat * 255,
+            heat * 255,
+        ],
+        axis=2,
+    )
 
     blend = heat[:, :, np.newaxis]
     blend_strength = np.clip(blend * 0.55, 0, 1)
@@ -1419,7 +1612,9 @@ def _build_attention_overlay(
         binary = (heat_smooth >= thresh).astype(np.uint8) * 255
         # Re-restrict to tissue (the threshold may keep edge fringe outside).
         binary = binary * tissue_mask
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
         min_area = (render_size * 0.5) ** 2
         lw = base_lw * lw_mult
         for cnt in contours:
@@ -1469,7 +1664,7 @@ def _build_combined_overlay(
     xs = np.arange(tile_size, dtype=np.float32) - half
     gx, gy = np.meshgrid(xs, ys)
     sigma = tile_size * 0.38
-    gaussian_kernel = np.exp(-(gx ** 2 + gy ** 2) / (2 * sigma ** 2))
+    gaussian_kernel = np.exp(-(gx**2 + gy**2) / (2 * sigma**2))
 
     for (tx, ty), label in zip(tile_coords, tile_labels):
         color = PATTERN_PALETTE.get(label, (128, 128, 128))
@@ -1502,7 +1697,9 @@ def _build_combined_overlay(
     img_arr_rgb = np.array(img.convert("RGB"))
     img_gray = img_arr_rgb.mean(axis=2)
     tissue_binary_pat = (img_gray < 220).astype(np.uint8) * 255
-    tissue_mask_pat = Image.fromarray(tissue_binary_pat, "L").filter(ImageFilter.MaxFilter(size=5))
+    tissue_mask_pat = Image.fromarray(tissue_binary_pat, "L").filter(
+        ImageFilter.MaxFilter(size=5)
+    )
     ov_r, ov_g, ov_b, ov_a = overlay.split()
     ov_a_arr = np.array(ov_a)
     ov_a_arr[np.array(tissue_mask_pat) == 0] = 0
@@ -1519,11 +1716,15 @@ def _build_combined_overlay(
     r_xs = np.arange(render_size, dtype=np.float32) - r_half
     r_gx, r_gy = np.meshgrid(r_xs, r_ys)
     r_sigma = render_size * 0.42
-    r_gaussian = np.exp(-(r_gx ** 2 + r_gy ** 2) / (2 * r_sigma ** 2))
+    r_gaussian = np.exp(-(r_gx**2 + r_gy**2) / (2 * r_sigma**2))
 
     heat = np.zeros((h, w), dtype=np.float32)
     top_set = set(top_k_indices)
-    top_weights = attention_weights[list(top_k_indices)] if len(top_k_indices) > 0 else np.array([1.0])
+    top_weights = (
+        attention_weights[list(top_k_indices)]
+        if len(top_k_indices) > 0
+        else np.array([1.0])
+    )
     w_min, w_max = top_weights.min(), top_weights.max()
     w_range = w_max - w_min if w_max > w_min else 1e-8
 
@@ -1564,7 +1765,9 @@ def _build_combined_overlay(
     for thresh, lw_mult in zip(thresholds, width_multipliers):
         binary = (heat_smooth >= thresh).astype(np.uint8) * 255
         binary = binary * tissue_mask
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
         min_area = (render_size * 0.5) ** 2
         lw = base_lw * lw_mult
         for cnt in contours:
@@ -1574,14 +1777,18 @@ def _build_combined_overlay(
             cv2.drawContours(result_arr, [smooth_cnt], -1, (0, 0, 0), lw, cv2.LINE_AA)
             # Reinforce the top-attention contour so it reads darker after AA + browser downscale.
             if lw_mult >= 4:
-                cv2.drawContours(result_arr, [smooth_cnt], -1, (0, 0, 0), lw, cv2.LINE_AA)
+                cv2.drawContours(
+                    result_arr, [smooth_cnt], -1, (0, 0, 0), lw, cv2.LINE_AA
+                )
 
     buf = io.BytesIO()
     Image.fromarray(result_arr, "RGB").save(buf, format="PNG")
     return buf.getvalue()
 
 
-def _real_tile_inference(tiles: list[tuple[int, int, Image.Image]], config: InferenceConfig) -> dict[str, list[float]]:
+def _real_tile_inference(
+    tiles: list[tuple[int, int, Image.Image]], config: InferenceConfig
+) -> dict[str, list[float]]:
     """Run CTransPath Swin Tiny backbone + FuzzyArcLoss V2 cosine head on tiles.
 
     Each tile is resized to 224×224, normalised with ImageNet stats, given a
@@ -1602,30 +1809,37 @@ def _real_tile_inference(tiles: list[tuple[int, int, Image.Image]], config: Infe
     s_scale = pipe["s_scale"]
     img_size = pipe["img_size"]  # 224
 
-    normalize = transforms.Compose([
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    normalize = transforms.Compose(
+        [
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
     scores: dict[str, list[float]] = {p: [] for p in PATTERNS}
     all_embeddings: list[np.ndarray] = []
     batch_size = 64 if device != "cpu" else 16
-    logger.info("Tile inference: %d tiles, batch_size=%d, device=%s", len(tiles), batch_size, device)
+    logger.info(
+        "Tile inference: %d tiles, batch_size=%d, device=%s",
+        len(tiles),
+        batch_size,
+        device,
+    )
 
     with torch.no_grad():
         for i in range(0, len(tiles), batch_size):
-            batch_3ch = [normalize(t[2]) for t in tiles[i:i + batch_size]]
+            batch_3ch = [normalize(t[2]) for t in tiles[i : i + batch_size]]
             mask_ch = torch.ones(1, img_size, img_size)
             batch_4ch = [torch.cat([img3, mask_ch], dim=0) for img3 in batch_3ch]
             batch_tensor = torch.stack(batch_4ch).to(device)
 
-            embeddings = model(batch_tensor)                   # (B, 512)
+            embeddings = model(batch_tensor)  # (B, 512)
             all_embeddings.append(embeddings.cpu().numpy())
 
             emb_norm = F.normalize(embeddings, dim=1)
-            w_norm = F.normalize(head_weight, dim=1)           # (6, 512)
-            cosine = emb_norm @ w_norm.t()                     # (B, 6)
+            w_norm = F.normalize(head_weight, dim=1)  # (6, 512)
+            cosine = emb_norm @ w_norm.t()  # (B, 6)
             logits = cosine * s_scale
             probs = torch.softmax(logits, dim=1).cpu().numpy()  # (B, 6)
 

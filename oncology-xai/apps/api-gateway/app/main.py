@@ -59,6 +59,7 @@ async def _security_headers(request: Request, call_next):
     response.headers.setdefault("Cache-Control", "no-store")
     return response
 
+
 setup_metrics(app)
 instrument_fastapi(app)
 
@@ -79,7 +80,9 @@ async def _exc(request: Request, exc: Exception):
 
 @app.get("/healthz", response_model=HealthResponse, tags=["Health"])
 async def health():
-    return HealthResponse(status="healthy", service=settings.service_name, version=settings.version)
+    return HealthResponse(
+        status="healthy", service=settings.service_name, version=settings.version
+    )
 
 
 @app.get("/auth/me", tags=["Auth"])
@@ -93,5 +96,10 @@ async def auth_me(request: Request):
         token = auth_header[7:]
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         user = await get_current_user(request, creds)
-        return {"user_id": user.user_id, "roles": user.roles, "email": user.email, "name": user.name}
+        return {
+            "user_id": user.user_id,
+            "roles": user.roles,
+            "email": user.email,
+            "name": user.name,
+        }
     return JSONResponse(status_code=401, content={"detail": "Missing token"})

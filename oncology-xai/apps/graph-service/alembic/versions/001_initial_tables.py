@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-07
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -25,7 +26,12 @@ def upgrade() -> None:
         sa.Column("edges_json", sa.JSON, server_default="[]"),
         sa.Column("ontology_versions", sa.JSON, server_default="{}"),
         sa.Column("layout_json", sa.JSON, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("idx_graph_snapshots_case_id", "case_graph_snapshots", ["case_id"])
 

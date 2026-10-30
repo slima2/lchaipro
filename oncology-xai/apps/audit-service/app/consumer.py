@@ -20,7 +20,9 @@ def _persist_event(envelope: EventEnvelope) -> None:
     """Persist audit event to DB (idempotent by event_id)."""
     engine = create_engine(settings.postgres_dsn_sync)
     with Session(engine) as session:
-        existing = session.query(AuditEventDB).filter_by(event_id=envelope.event_id).first()
+        existing = (
+            session.query(AuditEventDB).filter_by(event_id=envelope.event_id).first()
+        )
         if existing:
             logger.debug("Duplicate event_id=%s, skipping", envelope.event_id)
             return
@@ -60,7 +62,9 @@ def start_consumer() -> None:
             consumer.start(binding_keys=["#"])
             delay = 2
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Audit consumer disconnected (%s); retrying in %ss", exc, delay)
+            logger.warning(
+                "Audit consumer disconnected (%s); retrying in %ss", exc, delay
+            )
         time.sleep(delay)
         delay = min(delay * 2, 60)
 

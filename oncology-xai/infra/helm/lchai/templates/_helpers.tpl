@@ -1,12 +1,12 @@
 {{- define "lchai.image" -}}
-{{ .Values.image.registry }}/{{ .Values.image.prefix }}/{{ .svc }}:{{ .Values.image.tag }}
+{{ .Values.image.registry }}/{{ .Values.image.prefix }}{{ .Values.image.separator | default "/" }}{{ .svc }}:{{ .Values.image.tag }}
 {{- end -}}
 
 {{/* Imagen de un servicio: usa image.tags.<servicio> si existe, si no image.tag */}}
 {{- define "lchai.svcImage" -}}
 {{- $tags := .root.Values.image.tags | default dict -}}
 {{- $tag := index $tags .svc | default .root.Values.image.tag -}}
-{{ .root.Values.image.registry }}/{{ .root.Values.image.prefix }}/{{ .svc }}:{{ $tag }}
+{{ .root.Values.image.registry }}/{{ .root.Values.image.prefix }}{{ .root.Values.image.separator | default "/" }}{{ .svc }}:{{ $tag }}
 {{- end -}}
 
 {{/* nodeSelector por grupo de nodos (general | gpu); vacío = sin nodeSelector */}}
@@ -97,15 +97,85 @@ API de Kubernetes y el chart no usa roles IAM por cuenta de servicio (IRSA), as�
 automountServiceAccountToken: false
 {{- end -}}
 
+{{/*
+Dependencias de terceros (imágenes parcheadas en deps/): pod con fsGroup y seccomp, y contenedor sin root, sin
+escalada, sin capabilities y con el sistema de archivos raíz de solo lectura (las rutas escribibles van en emptyDir).
+Uso: include "lchai.depPodContext" (dict "gid" 70) / include "lchai.depContext" (dict "uid" 70 "gid" 70)
+*/}}
+{{- define "lchai.depPodContext" -}}
+securityContext:
+  {{- if .gid }}
+  fsGroup: {{ .gid }}
+  fsGroupChangePolicy: OnRootMismatch
+  {{- end }}
+  seccompProfile:
+    type: RuntimeDefault
+{{- end -}}
+
+{{- define "lchai.depContext" -}}
+securityContext:
+  runAsNonRoot: true
+  runAsUser: {{ .uid }}
+  runAsGroup: {{ .gid }}
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+{{- end -}}
+
+{{/*
+Discos Lustre (CSI): fsGroup no se aplica y el volumen llega con dueño root. initContainer mínimo que abre
+los permisos del punto de montaje (solo con storage.fixPermissions=true). Uso: dict "image" .. "path" .. "volume" ..
+*/}}
+{{- define "lchai.fixPermsInit" -}}
+- name: fix-permissions
+  image: {{ .image }}
+  command: ["sh", "-c", "chmod a+rwx {{ .path }}"]
+  securityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+  volumeMounts:
+    - name: {{ .volume }}
+      mountPath: {{ .path }}
+{{- end -}}
+
 {{/* Contenedores de las imágenes propias de lchai (corren sin root desde sec-20261029) */}}
 {{- define "lchai.containerHardening" -}}
 {{- if .Values.podSecurity.hardened }}
 securityContext:
   runAsNonRoot: true
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true   # las rutas escribibles (/tmp, caché de nginx) van en emptyDir
   capabilities:
     drop: ["ALL"]
   seccompProfile:
     type: RuntimeDefault
+{{- end }}
+{{- end -}}
+
+{{/* /tmp escribible (HOME de los servicios Python) cuando el contenedor corre con raíz de solo lectura */}}
+{{- define "lchai.tmpMount" -}}
+{{- if .Values.podSecurity.hardened }}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+{{- end -}}
+
+{{- define "lchai.tmpVolume" -}}
+{{- if .Values.podSecurity.hardened }}
+- name: tmp
+  emptyDir:
+    sizeLimit: 1Gi
 {{- end }}
 {{- end -}}

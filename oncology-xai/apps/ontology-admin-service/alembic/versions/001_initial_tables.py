@@ -6,6 +6,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-07
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -26,7 +27,12 @@ def upgrade() -> None:
         sa.Column("source_uri", sa.String(1024), nullable=False),
         sa.Column("hash", sa.String(64), nullable=False),
         sa.Column("is_active", sa.Boolean, server_default="false"),
-        sa.Column("imported_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "imported_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("idx_ontology_versions_name", "ontology_versions", ["name"])
     op.create_index("idx_ontology_versions_active", "ontology_versions", ["is_active"])
@@ -43,7 +49,12 @@ def upgrade() -> None:
         sa.Column("validation_results", sa.JSON, nullable=True),
         sa.Column("created_by", sa.String(255), nullable=True),
         sa.Column("approved_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("idx_proposals_status", "ontology_update_proposals", ["status"])
@@ -59,9 +70,16 @@ def upgrade() -> None:
         sa.Column("format", sa.String(20), server_default="html"),
         sa.Column("guardrails_passed", sa.Boolean, server_default="true"),
         sa.Column("guardrails_violations", sa.JSON, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
-    op.create_index("idx_explanation_reports_case_id", "explanation_reports", ["case_id"])
+    op.create_index(
+        "idx_explanation_reports_case_id", "explanation_reports", ["case_id"]
+    )
 
 
 def downgrade() -> None:

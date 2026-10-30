@@ -21,14 +21,18 @@ logger = logging.getLogger(__name__)
 # Helper: IRI builders
 # ──────────────────────────────────────────────────────────────────────
 
+
 def _ncit(code: str) -> str:
     return f"http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#{code}"
+
 
 def _mondo(code: str) -> str:
     return f"http://purl.obolibrary.org/obo/MONDO_{code}"
 
+
 def _doid(code: str) -> str:
     return f"http://purl.obolibrary.org/obo/DOID_{code}"
+
 
 def _chebi(code: str) -> str:
     return f"http://purl.obolibrary.org/obo/CHEBI_{code}"
@@ -51,55 +55,107 @@ def _iri_to_id(iri: str) -> str:
 
 CURATED_NODES: dict[str, dict] = {
     # ── Diagnosis ──
-    _ncit("C2852"):     {"label": "Adenocarcinoma",            "type": "diagnosis"},
-    _ncit("C2926"):     {"label": "Non-Small Cell Lung Cancer","type": "diagnosis"},
-    _mondo("0005233"):  {"label": "NSCLC (MONDO)",             "type": "diagnosis"},
-
+    _ncit("C2852"): {"label": "Adenocarcinoma", "type": "diagnosis"},
+    _ncit("C2926"): {"label": "Non-Small Cell Lung Cancer", "type": "diagnosis"},
+    _mondo("0005233"): {"label": "NSCLC (MONDO)", "type": "diagnosis"},
     # ── Histologic patterns (WHO 2021 LUAD subtypes) ──
-    _ncit("C55821"):   {"label": "Lepidic Pattern",           "type": "pattern"},
-    _ncit("C35922"):   {"label": "Acinar Pattern",            "type": "pattern"},
-    _ncit("C35911"):   {"label": "Papillary Pattern",         "type": "pattern"},
-    _ncit("C36181"):   {"label": "Micropapillary Pattern",    "type": "pattern"},
-    _ncit("C36182"):   {"label": "Solid Pattern",             "type": "pattern"},
-    _ncit("C35920"):    {"label": "Cribriform Pattern",        "type": "pattern"},
-
+    _ncit("C55821"): {"label": "Lepidic Pattern", "type": "pattern"},
+    _ncit("C35922"): {"label": "Acinar Pattern", "type": "pattern"},
+    _ncit("C35911"): {"label": "Papillary Pattern", "type": "pattern"},
+    _ncit("C36181"): {"label": "Micropapillary Pattern", "type": "pattern"},
+    _ncit("C36182"): {"label": "Solid Pattern", "type": "pattern"},
+    _ncit("C35920"): {"label": "Cribriform Pattern", "type": "pattern"},
     # ── Genes / Biomarkers ──
-    _ncit("C17757"):    {"label": "EGFR",                      "type": "gene"},
-    _ncit("C25785"):    {"label": "KRAS",                      "type": "gene"},
-    _ncit("C17359"):    {"label": "TP53",                      "type": "gene"},
-    _ncit("C20316"):    {"label": "ALK",                       "type": "gene"},
-    _ncit("C101480"):   {"label": "ROS1",                      "type": "gene"},
-    _ncit("C51549"):    {"label": "BRAF",                      "type": "gene"},
-    _ncit("C17735"):    {"label": "MET",                       "type": "gene"},
-    _ncit("C52544"):    {"label": "RET",                       "type": "gene"},
-    _ncit("C18449"):    {"label": "HER2 (ERBB2)",              "type": "gene"},
+    _ncit("C17757"): {"label": "EGFR", "type": "gene"},
+    _ncit("C25785"): {"label": "KRAS", "type": "gene"},
+    _ncit("C17359"): {"label": "TP53", "type": "gene"},
+    _ncit("C20316"): {"label": "ALK", "type": "gene"},
+    _ncit("C101480"): {"label": "ROS1", "type": "gene"},
+    _ncit("C51549"): {"label": "BRAF", "type": "gene"},
+    _ncit("C17735"): {"label": "MET", "type": "gene"},
+    _ncit("C52544"): {"label": "RET", "type": "gene"},
+    _ncit("C18449"): {"label": "HER2 (ERBB2)", "type": "gene"},
     # Thesis genes added for v2
-    _ncit("C18253"):    {"label": "STK11",                     "type": "gene"},
-    _ncit("C112105"):   {"label": "KEAP1",                     "type": "gene"},
-    _ncit("C115382"):   {"label": "RBM10",                     "type": "gene"},
-
+    _ncit("C18253"): {"label": "STK11", "type": "gene"},
+    _ncit("C112105"): {"label": "KEAP1", "type": "gene"},
+    _ncit("C115382"): {"label": "RBM10", "type": "gene"},
     # ── Treatments / Drugs (FDA-approved for NSCLC, from OncoKB/NCIt) ──
-    "drug:erlotinib":    {"label": "Erlotinib",       "type": "treatment", "iri": _ncit("C65530")},
-    "drug:gefitinib":    {"label": "Gefitinib",       "type": "treatment", "iri": _ncit("C1855")},
-    "drug:afatinib":     {"label": "Afatinib",        "type": "treatment", "iri": _ncit("C66940")},
-    "drug:osimertinib":  {"label": "Osimertinib",     "type": "treatment", "iri": _ncit("C116377")},
-    "drug:sotorasib":    {"label": "Sotorasib",       "type": "treatment", "iri": _ncit("C154287")},
-    "drug:adagrasib":    {"label": "Adagrasib",       "type": "treatment", "iri": _ncit("C177693")},
-    "drug:crizotinib":   {"label": "Crizotinib",      "type": "treatment", "iri": _ncit("C71610")},
-    "drug:alectinib":    {"label": "Alectinib",       "type": "treatment", "iri": _ncit("C101790")},
-    "drug:lorlatinib":   {"label": "Lorlatinib",      "type": "treatment", "iri": _ncit("C120299")},
-    "drug:entrectinib":  {"label": "Entrectinib",     "type": "treatment", "iri": _ncit("C120226")},
-    "drug:dabrafenib":   {"label": "Dabrafenib",      "type": "treatment", "iri": _ncit("C82386")},
-    "drug:trametinib":   {"label": "Trametinib",      "type": "treatment", "iri": _ncit("C77908")},
-    "drug:capmatinib":   {"label": "Capmatinib",      "type": "treatment", "iri": _ncit("C116379")},
-    "drug:selpercatinib": {"label": "Selpercatinib",  "type": "treatment", "iri": _ncit("C148138")},
-    "drug:trastuzumab_dxd": {"label": "Trastuzumab Deruxtecan", "type": "treatment", "iri": _ncit("C152070")},
-
+    "drug:erlotinib": {
+        "label": "Erlotinib",
+        "type": "treatment",
+        "iri": _ncit("C65530"),
+    },
+    "drug:gefitinib": {
+        "label": "Gefitinib",
+        "type": "treatment",
+        "iri": _ncit("C1855"),
+    },
+    "drug:afatinib": {"label": "Afatinib", "type": "treatment", "iri": _ncit("C66940")},
+    "drug:osimertinib": {
+        "label": "Osimertinib",
+        "type": "treatment",
+        "iri": _ncit("C116377"),
+    },
+    "drug:sotorasib": {
+        "label": "Sotorasib",
+        "type": "treatment",
+        "iri": _ncit("C154287"),
+    },
+    "drug:adagrasib": {
+        "label": "Adagrasib",
+        "type": "treatment",
+        "iri": _ncit("C177693"),
+    },
+    "drug:crizotinib": {
+        "label": "Crizotinib",
+        "type": "treatment",
+        "iri": _ncit("C71610"),
+    },
+    "drug:alectinib": {
+        "label": "Alectinib",
+        "type": "treatment",
+        "iri": _ncit("C101790"),
+    },
+    "drug:lorlatinib": {
+        "label": "Lorlatinib",
+        "type": "treatment",
+        "iri": _ncit("C120299"),
+    },
+    "drug:entrectinib": {
+        "label": "Entrectinib",
+        "type": "treatment",
+        "iri": _ncit("C120226"),
+    },
+    "drug:dabrafenib": {
+        "label": "Dabrafenib",
+        "type": "treatment",
+        "iri": _ncit("C82386"),
+    },
+    "drug:trametinib": {
+        "label": "Trametinib",
+        "type": "treatment",
+        "iri": _ncit("C77908"),
+    },
+    "drug:capmatinib": {
+        "label": "Capmatinib",
+        "type": "treatment",
+        "iri": _ncit("C116379"),
+    },
+    "drug:selpercatinib": {
+        "label": "Selpercatinib",
+        "type": "treatment",
+        "iri": _ncit("C148138"),
+    },
+    "drug:trastuzumab_dxd": {
+        "label": "Trastuzumab Deruxtecan",
+        "type": "treatment",
+        "iri": _ncit("C152070"),
+    },
     # ── Staging (simplified) ──
-    "stage:I":   {"label": "Stage I",   "type": "stage"},
-    "stage:II":  {"label": "Stage II",  "type": "stage"},
+    "stage:I": {"label": "Stage I", "type": "stage"},
+    "stage:II": {"label": "Stage II", "type": "stage"},
     "stage:III": {"label": "Stage III", "type": "stage"},
-    "stage:IV":  {"label": "Stage IV",  "type": "stage"},
+    "stage:IV": {"label": "Stage IV", "type": "stage"},
 }
 
 
@@ -110,73 +166,225 @@ CURATED_NODES: dict[str, dict] = {
 
 CURATED_EDGES: list[dict] = [
     # ── Taxonomy ──
-    {"s": _ncit("C2852"),  "t": _ncit("C2926"),  "label": "subClassOf",      "prov": "NCIt"},
-    {"s": _ncit("C2926"),  "t": _mondo("0005233"), "label": "equivalentClass", "prov": "MONDO"},
-
+    {"s": _ncit("C2852"), "t": _ncit("C2926"), "label": "subClassOf", "prov": "NCIt"},
+    {
+        "s": _ncit("C2926"),
+        "t": _mondo("0005233"),
+        "label": "equivalentClass",
+        "prov": "MONDO",
+    },
     # ── Patterns → Diagnosis (WHO classification) ──
-    {"s": _ncit("C55821"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-    {"s": _ncit("C35922"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-    {"s": _ncit("C35911"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-    {"s": _ncit("C36181"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-    {"s": _ncit("C36182"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-    {"s": _ncit("C35920"), "t": _ncit("C2852"), "label": "subtypeOf",       "prov": "WHO-2021"},
-
+    {
+        "s": _ncit("C55821"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
+    {
+        "s": _ncit("C35922"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
+    {
+        "s": _ncit("C35911"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
+    {
+        "s": _ncit("C36181"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
+    {
+        "s": _ncit("C36182"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
+    {
+        "s": _ncit("C35920"),
+        "t": _ncit("C2852"),
+        "label": "subtypeOf",
+        "prov": "WHO-2021",
+    },
     # ── Patterns → Genes (morphology-molecular correlation) ──
     # Each edge has a specific PMID or DOI as provenance.
     # Thesis reference: Table gene_unified (Ch. 3).
     #
     # Lepidic → EGFR: PMID:27738759 (90.5% EGFR in lepidic; J Cancer Res Clin Oncol 2017)
     #                  + PMID:21252858 (Yoshizawa et al. 2011; lepidic = low-grade, EGFR-enriched)
-    {"s": _ncit("C55821"), "t": _ncit("C17757"), "label": "associatedWithMutation", "prov": "PMID:27738759", "type": "inferred"},
+    {
+        "s": _ncit("C55821"),
+        "t": _ncit("C17757"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:27738759",
+        "type": "inferred",
+    },
     # Papillary → EGFR: PMID:21252858 (Yoshizawa et al.; papillary = intermediate, EGFR-enriched)
-    {"s": _ncit("C35911"), "t": _ncit("C17757"), "label": "associatedWithMutation", "prov": "PMID:21252858", "type": "inferred"},
+    {
+        "s": _ncit("C35911"),
+        "t": _ncit("C17757"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:21252858",
+        "type": "inferred",
+    },
     # Micropapillary → TP53: PMID:36457500 (TP53 57.4% in micropapillary LUAD; Front Oncol 2022)
     #                         + thesis gene_unified: TP53 = solid + micropapillary
-    {"s": _ncit("C36181"), "t": _ncit("C17359"), "label": "associatedWithMutation", "prov": "PMID:36457500", "type": "inferred"},
+    {
+        "s": _ncit("C36181"),
+        "t": _ncit("C17359"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:36457500",
+        "type": "inferred",
+    },
     # Micropapillary → ALK: PMID:21753699 (Yoshida et al.; comprehensive histologic analysis of ALK-rearranged LUAD; Am J Surg Pathol 2011)
-    {"s": _ncit("C36181"), "t": _ncit("C20316"), "label": "associatedWithMutation", "prov": "PMID:21753699", "type": "inferred"},
+    {
+        "s": _ncit("C36181"),
+        "t": _ncit("C20316"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:21753699",
+        "type": "inferred",
+    },
     # Solid → KRAS: PMID:23619604 (solid 27% in KRAS+ vs 3% in EGFR+, p<0.001; Mod Pathol 2013)
-    {"s": _ncit("C36182"), "t": _ncit("C25785"), "label": "associatedWithMutation", "prov": "PMID:23619604", "type": "inferred"},
+    {
+        "s": _ncit("C36182"),
+        "t": _ncit("C25785"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:23619604",
+        "type": "inferred",
+    },
     # Solid → TP53: PMID:25079552 (TCGA 2014 Nature; TP53 most mutated gene, associated with high-grade)
     #               + thesis gene_unified: TP53 = solid + micropapillary
-    {"s": _ncit("C36182"), "t": _ncit("C17359"), "label": "associatedWithMutation", "prov": "PMID:25079552", "type": "inferred"},
+    {
+        "s": _ncit("C36182"),
+        "t": _ncit("C17359"),
+        "label": "associatedWithMutation",
+        "prov": "PMID:25079552",
+        "type": "inferred",
+    },
     # Acinar: no specific gene enrichment (EJSO 2019 pooled: OR 0.65 for KRAS, EGFR not enriched)
     # Cribriform: no established gene association (rare; PMID:24061507 Kamata et al. 2013)
     # Papillary → BRAF: not included — PMID:21483012 shows BRAF in LUAD but no specific
     #   papillary enrichment in the primary data; weaker evidence than other edges.
-
     # ── Genes → Treatments (OncoKB / NCCN Guidelines, FDA-approved) ──
     # EGFR → TKIs
-    {"s": _ncit("C17757"), "t": "drug:erlotinib",   "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C17757"), "t": "drug:gefitinib",   "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C17757"), "t": "drug:afatinib",    "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C17757"), "t": "drug:osimertinib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C17757"),
+        "t": "drug:erlotinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C17757"),
+        "t": "drug:gefitinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C17757"),
+        "t": "drug:afatinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C17757"),
+        "t": "drug:osimertinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # KRAS G12C → targeted therapies
-    {"s": _ncit("C25785"), "t": "drug:sotorasib",   "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C25785"), "t": "drug:adagrasib",   "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C25785"),
+        "t": "drug:sotorasib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C25785"),
+        "t": "drug:adagrasib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # ALK → inhibitors
-    {"s": _ncit("C20316"), "t": "drug:crizotinib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C20316"), "t": "drug:alectinib",   "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C20316"), "t": "drug:lorlatinib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C20316"),
+        "t": "drug:crizotinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C20316"),
+        "t": "drug:alectinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C20316"),
+        "t": "drug:lorlatinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # ROS1 → inhibitors
-    {"s": _ncit("C101480"), "t": "drug:crizotinib", "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C101480"), "t": "drug:entrectinib", "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C101480"),
+        "t": "drug:crizotinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C101480"),
+        "t": "drug:entrectinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # BRAF V600E → dabrafenib+trametinib
-    {"s": _ncit("C51549"), "t": "drug:dabrafenib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
-    {"s": _ncit("C51549"), "t": "drug:trametinib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C51549"),
+        "t": "drug:dabrafenib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
+    {
+        "s": _ncit("C51549"),
+        "t": "drug:trametinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # MET → capmatinib
-    {"s": _ncit("C17735"), "t": "drug:capmatinib",  "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C17735"),
+        "t": "drug:capmatinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # RET → selpercatinib
-    {"s": _ncit("C52544"), "t": "drug:selpercatinib", "label": "treatedWith", "prov": "OncoKB/FDA"},
+    {
+        "s": _ncit("C52544"),
+        "t": "drug:selpercatinib",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # HER2 → trastuzumab deruxtecan
-    {"s": _ncit("C18449"), "t": "drug:trastuzumab_dxd", "label": "treatedWith", "prov": "OncoKB/FDA"},
-
+    {
+        "s": _ncit("C18449"),
+        "t": "drug:trastuzumab_dxd",
+        "label": "treatedWith",
+        "prov": "OncoKB/FDA",
+    },
     # ── Genes → mutatedIn diagnosis ──
     {"s": _ncit("C17757"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
     {"s": _ncit("C25785"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
     {"s": _ncit("C17359"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
     {"s": _ncit("C20316"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
-    {"s": _ncit("C101480"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
+    {
+        "s": _ncit("C101480"),
+        "t": _ncit("C2852"),
+        "label": "mutatedIn",
+        "prov": "COSMIC",
+    },
     {"s": _ncit("C51549"), "t": _ncit("C2852"), "label": "mutatedIn", "prov": "COSMIC"},
 ]
 
@@ -185,7 +393,10 @@ CURATED_EDGES: list[dict] = [
 # OWL label enrichment (optional)
 # ──────────────────────────────────────────────────────────────────────
 
-def _enrich_labels_from_owl(nodes: dict[str, dict], ncit_path: str, mondo_path: str) -> None:
+
+def _enrich_labels_from_owl(
+    nodes: dict[str, dict], ncit_path: str, mondo_path: str
+) -> None:
     """Try to replace placeholder labels with rdfs:label from OWL files."""
     try:
         from rdflib import Graph as RDFGraph
@@ -219,7 +430,9 @@ def _enrich_labels_from_owl(nodes: dict[str, dict], ncit_path: str, mondo_path: 
                     data["label"] = lbl
                 break
         except Exception:
-            logger.debug("could not read ontology label", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+            logger.debug(
+                "could not read ontology label", exc_info=True
+            )  # antes se ignoraba en silencio (Bandit S110)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -227,27 +440,27 @@ def _enrich_labels_from_owl(nodes: dict[str, dict], ncit_path: str, mondo_path: 
 # ──────────────────────────────────────────────────────────────────────
 
 PATTERN_NAME_TO_IRI: dict[str, str] = {
-    "lepidic":        _ncit("C55821"),
-    "acinar":         _ncit("C35922"),
-    "papillary":      _ncit("C35911"),
+    "lepidic": _ncit("C55821"),
+    "acinar": _ncit("C35922"),
+    "papillary": _ncit("C35911"),
     "micropapillary": _ncit("C36181"),
-    "solid":          _ncit("C36182"),
-    "cribriform":     _ncit("C35920"),
+    "solid": _ncit("C36182"),
+    "cribriform": _ncit("C35920"),
 }
 
 GENE_NAME_TO_IRI: dict[str, str] = {
-    "EGFR":  _ncit("C17757"),
-    "KRAS":  _ncit("C25785"),
-    "TP53":  _ncit("C17359"),
+    "EGFR": _ncit("C17757"),
+    "KRAS": _ncit("C25785"),
+    "TP53": _ncit("C17359"),
     "STK11": _ncit("C18253"),
     "KEAP1": _ncit("C112105"),
     "RBM10": _ncit("C115382"),
-    "ALK":   _ncit("C20316"),
-    "ROS1":  _ncit("C101480"),
-    "BRAF":  _ncit("C51549"),
-    "MET":   _ncit("C17735"),
-    "RET":   _ncit("C52544"),
-    "HER2":  _ncit("C18449"),
+    "ALK": _ncit("C20316"),
+    "ROS1": _ncit("C101480"),
+    "BRAF": _ncit("C51549"),
+    "MET": _ncit("C17735"),
+    "RET": _ncit("C52544"),
+    "HER2": _ncit("C18449"),
     "ERBB2": _ncit("C18449"),
 }
 
@@ -257,6 +470,7 @@ THESIS_GENES = {"TP53", "EGFR", "KRAS", "STK11", "KEAP1", "RBM10"}
 # ──────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────
+
 
 def build_case_graph_from_ontology(
     case_id: str,
@@ -310,11 +524,16 @@ def build_case_graph_from_ontology(
         relevant_pattern_iris = set(PATTERN_NAME_TO_IRI.values())
 
     # Only include thesis genes (TP53, EGFR, KRAS, STK11, KEAP1, RBM10)
-    thesis_gene_iris = {GENE_NAME_TO_IRI[g] for g in THESIS_GENES if g in GENE_NAME_TO_IRI}
+    thesis_gene_iris = {
+        GENE_NAME_TO_IRI[g] for g in THESIS_GENES if g in GENE_NAME_TO_IRI
+    }
 
     # Find thesis genes associated with active patterns (from curated edges)
     for edge in CURATED_EDGES:
-        if edge["label"] == "associatedWithMutation" and edge["s"] in relevant_pattern_iris:
+        if (
+            edge["label"] == "associatedWithMutation"
+            and edge["s"] in relevant_pattern_iris
+        ):
             if edge["t"] in thesis_gene_iris:
                 relevant_gene_iris.add(edge["t"])
 
@@ -338,7 +557,12 @@ def build_case_graph_from_ontology(
             relevant_treatment_ids.add(edge["t"])
 
     # Build the allowed set of IRIs/ids
-    allowed_iris = relevant_pattern_iris | relevant_gene_iris | relevant_diag_iris | relevant_treatment_ids
+    allowed_iris = (
+        relevant_pattern_iris
+        | relevant_gene_iris
+        | relevant_diag_iris
+        | relevant_treatment_ids
+    )
 
     # Build filtered nodes
     nodes: dict[str, dict] = {}
@@ -379,13 +603,15 @@ def build_case_graph_from_ontology(
         sid = _iri_to_id(e["s"])
         tid = _iri_to_id(e["t"])
         if sid in node_ids and tid in node_ids:
-            edges.append({
-                "source": sid,
-                "target": tid,
-                "label": e["label"],
-                "type": e.get("type", "asserted"),
-                "provenance": e["prov"],
-            })
+            edges.append(
+                {
+                    "source": sid,
+                    "target": tid,
+                    "label": e["label"],
+                    "type": e.get("type", "asserted"),
+                    "provenance": e["prov"],
+                }
+            )
 
     # Add case node — prefer the uploaded case name (patient external_id) with the internal id in parens.
     case_nid = f"case:{case_id}"
@@ -405,19 +631,29 @@ def build_case_graph_from_ontology(
     # Link case → diagnosis
     adeno_id = _iri_to_id(_ncit("C2852"))
     if adeno_id in node_ids:
-        edges.append({
-            "source": case_nid, "target": adeno_id,
-            "label": "hasDiagnosis", "type": "asserted", "provenance": "ehr",
-        })
+        edges.append(
+            {
+                "source": case_nid,
+                "target": adeno_id,
+                "label": "hasDiagnosis",
+                "type": "asserted",
+                "provenance": "ehr",
+            }
+        )
 
     # Link case → detected patterns (with percentage as weight)
     for piri in relevant_pattern_iris:
         pid = _iri_to_id(piri)
         if pid in node_ids:
-            edges.append({
-                "source": case_nid, "target": pid,
-                "label": "hasPattern", "type": "asserted", "provenance": "image",
-            })
+            edges.append(
+                {
+                    "source": case_nid,
+                    "target": pid,
+                    "label": "hasPattern",
+                    "type": "asserted",
+                    "provenance": "image",
+                }
+            )
 
     # Merge discovered relations from batch DeepSearch
     discovered_count = 0
@@ -442,10 +678,17 @@ def build_case_graph_from_ontology(
             # active_patterns is None when no slide-level filter is requested.
             def _pattern_slug(raw: str) -> str:
                 return raw.lower().replace(" pattern", "").strip()
+
             if active_patterns is not None:
-                if s_type == "pattern" and _pattern_slug(dr.get("subject", "")) not in active_patterns:
+                if (
+                    s_type == "pattern"
+                    and _pattern_slug(dr.get("subject", "")) not in active_patterns
+                ):
                     continue
-                if o_type == "pattern" and _pattern_slug(dr.get("object", "")) not in active_patterns:
+                if (
+                    o_type == "pattern"
+                    and _pattern_slug(dr.get("object", "")) not in active_patterns
+                ):
                     continue
 
             s_id = _iri_to_id(s_iri)
@@ -470,13 +713,15 @@ def build_case_graph_from_ontology(
             prov = dr.get("paper_source", "literature")
             if dr.get("paper_id"):
                 prov = f"{prov}:{dr['paper_id'][:20]}"
-            edges.append({
-                "source": s_id,
-                "target": o_id,
-                "label": dr.get("predicate", "relatedTo"),
-                "type": "inferred",
-                "provenance": prov,
-            })
+            edges.append(
+                {
+                    "source": s_id,
+                    "target": o_id,
+                    "label": dr.get("predicate", "relatedTo"),
+                    "type": "inferred",
+                    "provenance": prov,
+                }
+            )
             discovered_count += 1
 
     # Deduplicate nodes: merge nodes with same label (case-insensitive)
@@ -485,9 +730,13 @@ def build_case_graph_from_ontology(
     logger.info(
         "Built case-specific graph for %s: %d nodes, %d edges "
         "(patterns=%d, genes=%d, treatments=%d, discovered=%d)",
-        case_id[:8], len(nodes), len(edges),
-        len(relevant_pattern_iris), len(relevant_gene_iris),
-        len(relevant_treatment_ids), discovered_count,
+        case_id[:8],
+        len(nodes),
+        len(edges),
+        len(relevant_pattern_iris),
+        len(relevant_gene_iris),
+        len(relevant_treatment_ids),
+        discovered_count,
     )
     return nodes, edges
 
@@ -505,7 +754,14 @@ def _deduplicate_graph(
 
     # "ontology" is the source when the IRI is a real NCIt/MONDO URL (resolved from CURATED_NODES);
     # it must beat "discovered" so that "Acinar Pattern (0.9%)" wins over the bare DeepSearch slug "acinar".
-    source_priority = {"curated": 3, "ontology": 3, "ehr": 2, "system": 2, "discovered": 1, "inferred": 0}
+    source_priority = {
+        "curated": 3,
+        "ontology": 3,
+        "ehr": 2,
+        "system": 2,
+        "discovered": 1,
+        "inferred": 0,
+    }
 
     for nid, node in sorted(nodes.items()):
         label_key = (node.get("label", "") or nid).strip().lower()
@@ -556,6 +812,10 @@ def _deduplicate_graph(
     n_merged = len(id_remap)
     n_edge_deduped = len(edges) - len(deduped_edges)
     if n_merged > 0:
-        logger.info("Graph dedup: merged %d duplicate nodes, removed %d duplicate edges", n_merged, n_edge_deduped)
+        logger.info(
+            "Graph dedup: merged %d duplicate nodes, removed %d duplicate edges",
+            n_merged,
+            n_edge_deduped,
+        )
 
     return deduped_nodes, deduped_edges

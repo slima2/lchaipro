@@ -1,4 +1,4 @@
-{{- if .Values.layers.inference }}
+{{- if and .Values.layers.inference .Values.inferenceWorker.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,11 +13,10 @@ data:
     endpoint = os.environ.get("S3_ENDPOINT", "")
     kwargs = {"region_name": os.environ.get("MODELS_REGION", "us-east-1")}
     if endpoint and "amazonaws.com" not in endpoint:
-        kwargs.update(
-            endpoint_url=endpoint,
-            aws_access_key_id=os.environ.get("S3_ACCESS_KEY") or None,
-            aws_secret_access_key=os.environ.get("S3_SECRET_KEY") or None,
-        )
+        # Las credenciales llegan por variables de entorno (Secret lchai-secrets), nunca en el script
+        kwargs["endpoint_url"] = endpoint
+        for arg, var in (("access_key_id", "S3_ACCESS_KEY"), ("secret_access_key", "S3_SECRET_KEY")):
+            kwargs["aws_" + arg] = os.environ.get(var) or None
     s3 = boto3.client("s3", **kwargs)
     bucket = os.environ["MODELS_BUCKET"]
     only = {n.strip() for n in os.environ.get("MODEL_FILES", "").split(",") if n.strip()}
@@ -35,7 +34,6 @@ data:
                 print(f"Downloading {key}...", flush=True)
                 s3.download_file(bucket, key, f"{dest}/{name}")
     print("Done", flush=True)
-{{- if .Values.inferenceWorker.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,6 +83,7 @@ spec:
               mountPath: /data
             - name: scripts
               mountPath: /scripts
+            {{- include "lchai.tmpMount" $ | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: lchai-config
@@ -111,6 +110,7 @@ spec:
           volumeMounts:
             - name: model-data
               mountPath: /data
+            {{- include "lchai.tmpMount" $ | nindent 12 }}
           resources:
             requests:
               cpu: {{ .Values.inferenceWorker.resources.requests.cpu | quote }}
@@ -131,5 +131,5 @@ spec:
         - name: scripts
           configMap:
             name: lchai-model-download
-{{- end }}
+        {{- include "lchai.tmpVolume" $ | nindent 8 }}
 {{- end }}

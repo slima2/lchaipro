@@ -73,7 +73,11 @@ def _mock_explanation(nodes: list[dict], edges: list[dict], case_id: str) -> str
         t = n.get("type", "entity")
         types[t] = types.get(t, 0) + 1
 
-    patterns = [n.get("label", "?") for n in nodes if n.get("type") == "pattern" or "pattern" in str(n.get("id", "")).lower()]
+    patterns = [
+        n.get("label", "?")
+        for n in nodes
+        if n.get("type") == "pattern" or "pattern" in str(n.get("id", "")).lower()
+    ]
     genes = [n.get("label", "?") for n in nodes if n.get("type") == "gene"]
     treatments = [n.get("label", "?") for n in nodes if n.get("type") == "treatment"]
 
@@ -84,9 +88,7 @@ def _mock_explanation(nodes: list[dict], edges: list[dict], case_id: str) -> str
     parts = []
 
     if patterns:
-        parts.append(
-            f"**Histological patterns detected:** {', '.join(patterns)}."
-        )
+        parts.append(f"**Histological patterns detected:** {', '.join(patterns)}.")
 
     if pos_genes:
         parts.append(
@@ -100,9 +102,7 @@ def _mock_explanation(nodes: list[dict], edges: list[dict], case_id: str) -> str
             parts.append(f"- **{gene_name}:** {tx}")
 
     if neg_genes:
-        parts.append(
-            f"**Likely wild-type (negative):** {', '.join(neg_genes)}."
-        )
+        parts.append(f"**Likely wild-type (negative):** {', '.join(neg_genes)}.")
 
     if inc_genes:
         parts.append(
@@ -133,7 +133,13 @@ async def generate_explanation(
     extra_context: str = "",
 ) -> str:
     """Generate natural language explanation of the graph via LLM or mock."""
-    LANG_MAP = {"en": "English", "es": "Spanish", "de": "German", "fr": "French", "pt": "Portuguese"}
+    LANG_MAP = {
+        "en": "English",
+        "es": "Spanish",
+        "de": "German",
+        "fr": "French",
+        "pt": "Portuguese",
+    }
     lang_name = LANG_MAP.get(language, language) if len(language) <= 3 else language
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(language=lang_name)
 

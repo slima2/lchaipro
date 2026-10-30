@@ -42,6 +42,10 @@ spec:
                 name: lchai-config
             - secretRef:
                 name: lchai-secrets
+          {{- with include "lchai.tmpMount" $ }}
+          volumeMounts:
+            {{- . | nindent 12 }}
+          {{- end }}
           resources:
             requests:
               cpu: 250m
@@ -50,11 +54,20 @@ spec:
               cpu: "1"
               memory: 1Gi
           readinessProbe:
+            {{- if eq ($.Values.probes.type | default "http") "tcpSocket" }}
+            tcpSocket:
+              port: {{ $svc.port }}
+            {{- else }}
             httpGet:
               path: {{ $svc.probe | default "/metrics" }}
               port: {{ $svc.port }}
+            {{- end }}
             initialDelaySeconds: 10
             periodSeconds: 15
+      {{- with include "lchai.tmpVolume" $ }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

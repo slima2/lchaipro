@@ -16,9 +16,18 @@ from app.models import CaseDB, PatientDB
 # Borrado de tablas hijas de un resultado: consultas fijas, sin construir SQL con texto (Bandit S608)
 _DELETE_BY_RESULT_BUNDLE = (
     ("xai_artifacts", text("DELETE FROM xai_artifacts WHERE result_bundle_id = :rb")),
-    ("pattern_results", text("DELETE FROM pattern_results WHERE result_bundle_id = :rb")),
-    ("genetic_results", text("DELETE FROM genetic_results WHERE result_bundle_id = :rb")),
-    ("morphologic_profiles", text("DELETE FROM morphologic_profiles WHERE result_bundle_id = :rb")),
+    (
+        "pattern_results",
+        text("DELETE FROM pattern_results WHERE result_bundle_id = :rb"),
+    ),
+    (
+        "genetic_results",
+        text("DELETE FROM genetic_results WHERE result_bundle_id = :rb"),
+    ),
+    (
+        "morphologic_profiles",
+        text("DELETE FROM morphologic_profiles WHERE result_bundle_id = :rb"),
+    ),
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +37,7 @@ cases_router = APIRouter(prefix="/api/v1", tags=["Cases"])
 
 
 # ── Patients ───────────────────────────────────────────────────────────
+
 
 @patients_router.post("/patients", status_code=status.HTTP_201_CREATED)
 async def create_patient(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
@@ -69,20 +79,30 @@ async def _cascade_delete_case(db: AsyncSession, case_id: str) -> dict[str, int]
     """
     counts: dict[str, int] = {}
 
-    rb_rows = await db.execute(text("SELECT id FROM result_bundles WHERE case_id = :c"), {"c": case_id})
+    rb_rows = await db.execute(
+        text("SELECT id FROM result_bundles WHERE case_id = :c"), {"c": case_id}
+    )
     rb_ids = [r[0] for r in rb_rows.fetchall()]
     for rb in rb_ids:
         for table, stmt in _DELETE_BY_RESULT_BUNDLE:
             res = await db.execute(stmt, {"rb": rb})
             counts[table] = counts.get(table, 0) + (res.rowcount or 0)
 
-    res = await db.execute(text("DELETE FROM result_bundles WHERE case_id = :c"), {"c": case_id})
+    res = await db.execute(
+        text("DELETE FROM result_bundles WHERE case_id = :c"), {"c": case_id}
+    )
     counts["result_bundles"] = res.rowcount or 0
-    res = await db.execute(text("DELETE FROM ml_jobs WHERE case_id = :c"), {"c": case_id})
+    res = await db.execute(
+        text("DELETE FROM ml_jobs WHERE case_id = :c"), {"c": case_id}
+    )
     counts["ml_jobs"] = res.rowcount or 0
-    res = await db.execute(text("DELETE FROM images WHERE case_id = :c"), {"c": case_id})
+    res = await db.execute(
+        text("DELETE FROM images WHERE case_id = :c"), {"c": case_id}
+    )
     counts["images"] = res.rowcount or 0
-    res = await db.execute(text("DELETE FROM ehr_documents WHERE case_id = :c"), {"c": case_id})
+    res = await db.execute(
+        text("DELETE FROM ehr_documents WHERE case_id = :c"), {"c": case_id}
+    )
     counts["ehr_documents"] = res.rowcount or 0
     res = await db.execute(text("DELETE FROM cases WHERE id = :c"), {"c": case_id})
     counts["cases"] = res.rowcount or 0
@@ -100,7 +120,9 @@ async def delete_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    case_rows = await db.execute(text("SELECT id FROM cases WHERE patient_id = :p"), {"p": patient_id})
+    case_rows = await db.execute(
+        text("SELECT id FROM cases WHERE patient_id = :p"), {"p": patient_id}
+    )
     case_ids = [r[0] for r in case_rows.fetchall()]
     total: dict[str, int] = {}
     for cid in case_ids:
@@ -108,7 +130,9 @@ async def delete_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
         for k, v in counts.items():
             total[k] = total.get(k, 0) + v
 
-    res = await db.execute(text("DELETE FROM patients WHERE id = :p"), {"p": patient_id})
+    res = await db.execute(
+        text("DELETE FROM patients WHERE id = :p"), {"p": patient_id}
+    )
     total["patients"] = res.rowcount or 0
     await db.commit()
     logger.info("Deleted patient %s cascading: %s", patient_id, total)
@@ -126,6 +150,7 @@ def _patient_dict(p: PatientDB) -> dict:
 
 
 # ── Cases ──────────────────────────────────────────────────────────────
+
 
 @cases_router.post("/cases", status_code=status.HTTP_201_CREATED)
 async def create_case(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
@@ -181,7 +206,9 @@ async def delete_case(case_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @cases_router.patch("/cases/{case_id}")
-async def update_case(case_id: str, body: dict[str, Any], db: AsyncSession = Depends(get_db)):
+async def update_case(
+    case_id: str, body: dict[str, Any], db: AsyncSession = Depends(get_db)
+):
     case = await db.get(CaseDB, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")

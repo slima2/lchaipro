@@ -65,28 +65,58 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
     if job.celery_task_id:
         try:
             from app.celery_app import celery
+
             celery.control.revoke(job.celery_task_id, terminate=True)
         except Exception:
-            logger.debug("could not revoke celery task", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+            logger.debug(
+                "could not revoke celery task", exc_info=True
+            )  # antes se ignoraba en silencio (Bandit S110)
 
     job.status = "CANCELLED"
     await db.commit()
 
     from sqlalchemy import text
-    case_id = job.case_id
-    image_id = job.image_id
 
-    await db.execute(text("DELETE FROM xai_artifacts WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"), {"cid": case_id})
-    await db.execute(text("DELETE FROM genetic_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"), {"cid": case_id})
-    await db.execute(text("DELETE FROM pattern_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"), {"cid": case_id})
-    await db.execute(text("DELETE FROM morphologic_profiles WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"), {"cid": case_id})
-    await db.execute(text("DELETE FROM result_bundles WHERE case_id = :cid"), {"cid": case_id})
+    case_id = job.case_id
+
+    await db.execute(
+        text(
+            "DELETE FROM xai_artifacts WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
+        ),
+        {"cid": case_id},
+    )
+    await db.execute(
+        text(
+            "DELETE FROM genetic_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
+        ),
+        {"cid": case_id},
+    )
+    await db.execute(
+        text(
+            "DELETE FROM pattern_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
+        ),
+        {"cid": case_id},
+    )
+    await db.execute(
+        text(
+            "DELETE FROM morphologic_profiles WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
+        ),
+        {"cid": case_id},
+    )
+    await db.execute(
+        text("DELETE FROM result_bundles WHERE case_id = :cid"), {"cid": case_id}
+    )
     await db.execute(text("DELETE FROM ml_jobs WHERE case_id = :cid"), {"cid": case_id})
     await db.execute(text("DELETE FROM images WHERE case_id = :cid"), {"cid": case_id})
     await db.execute(text("DELETE FROM cases WHERE id = :cid"), {"cid": case_id})
     await db.commit()
 
-    return {"status": "cancelled", "job_id": job_id, "case_id": case_id, "cleaned": True}
+    return {
+        "status": "cancelled",
+        "job_id": job_id,
+        "case_id": case_id,
+        "cleaned": True,
+    }
 
 
 @router.get("/jobs/{job_id}")
@@ -153,7 +183,9 @@ async def get_result_bundle(result_bundle_id: str, db: AsyncSession = Depends(ge
 
 @router.get("/results/{result_bundle_id}/artifacts")
 async def get_artifacts(result_bundle_id: str, db: AsyncSession = Depends(get_db)):
-    stmt = select(XAIArtifactDB).where(XAIArtifactDB.result_bundle_id == result_bundle_id)
+    stmt = select(XAIArtifactDB).where(
+        XAIArtifactDB.result_bundle_id == result_bundle_id
+    )
     result = await db.execute(stmt)
     return [
         {
@@ -173,6 +205,7 @@ async def get_checkpoint_status():
     """Return which v2 checkpoints are loaded per gene."""
     try:
         from app.ml.checkpoints.loader import CheckpointLoader
+
         loader = CheckpointLoader(settings.v2_checkpoint_dir, "cpu")
         return loader.get_checkpoint_status()
     except Exception as e:
@@ -189,6 +222,7 @@ async def get_parameters():
         GENE_MUTATION_THRESHOLD,
         PROPOSED_AUROC,
     )
+
     return {
         "auroc_values": PROPOSED_AUROC,
         "auroc_threshold": AUROC_THRESHOLD,
@@ -206,6 +240,7 @@ async def get_parameters():
 async def update_parameters(body: dict[str, Any]):
     """Update system parameters at runtime."""
     import app.ml.checkpoints.loader as loader_mod
+
     updated = []
 
     if "auroc_values" in body and isinstance(body["auroc_values"], dict):
@@ -228,7 +263,9 @@ async def update_parameters(body: dict[str, Any]):
         settings.mutation_threshold = float(body["mutation_threshold"])
         updated.append(f"mutation_threshold={body['mutation_threshold']}")
 
-    if "gene_mutation_thresholds" in body and isinstance(body["gene_mutation_thresholds"], dict):
+    if "gene_mutation_thresholds" in body and isinstance(
+        body["gene_mutation_thresholds"], dict
+    ):
         for gene, val in body["gene_mutation_thresholds"].items():
             if gene in loader_mod.GENE_MUTATION_THRESHOLD:
                 loader_mod.GENE_MUTATION_THRESHOLD[gene] = float(val)
@@ -272,7 +309,11 @@ def _pattern_results_public(prs: list | None) -> list[dict]:
 def _predominant_public(raw: str | None, prs: list | None) -> str | None:
     if raw and raw.lower() not in _DISALLOWED_PATTERN_NAMES:
         return raw
-    filtered = [pr for pr in (prs or []) if (getattr(pr, "pattern", None) or "").lower() not in _DISALLOWED_PATTERN_NAMES]
+    filtered = [
+        pr
+        for pr in (prs or [])
+        if (getattr(pr, "pattern", None) or "").lower() not in _DISALLOWED_PATTERN_NAMES
+    ]
     if not filtered:
         return None
     top = max(filtered, key=lambda x: getattr(x, "percentage", 0.0) or 0.0)
@@ -285,13 +326,17 @@ def _sanitize_choquet_payload(payload: dict | None) -> dict | None:
     out = dict(payload)
     sv = out.get("shapley_values")
     if isinstance(sv, dict):
-        out["shapley_values"] = {k: v for k, v in sv.items() if k.lower() not in _DISALLOWED_PATTERN_NAMES}
+        out["shapley_values"] = {
+            k: v for k, v in sv.items() if k.lower() not in _DISALLOWED_PATTERN_NAMES
+        }
     ix = out.get("interaction_indices")
     if isinstance(ix, dict):
         cleaned: dict[str, float] = {}
         for pair, val in ix.items():
             parts = pair.split("_", 1)
-            if len(parts) == 2 and all(p.lower() not in _DISALLOWED_PATTERN_NAMES for p in parts):
+            if len(parts) == 2 and all(
+                p.lower() not in _DISALLOWED_PATTERN_NAMES for p in parts
+            ):
                 cleaned[pair] = val
         out["interaction_indices"] = cleaned
     return out
@@ -327,16 +372,24 @@ def _bundle_dict(b: ResultBundleDB) -> dict:
                 "prediction_method": getattr(gr, "prediction_method", None),
                 "disclaimer": getattr(gr, "disclaimer", None),
                 "shap_decomposition": {
-                    "embedding_contribution_pct": getattr(gr, "shap_embedding_pct", None),
+                    "embedding_contribution_pct": getattr(
+                        gr, "shap_embedding_pct", None
+                    ),
                     "pattern_contribution_pct": getattr(gr, "shap_pattern_pct", None),
                     "top_pattern_dims": getattr(gr, "shap_top_patterns", None),
                     "pattern_shap_signed": getattr(gr, "shap_pattern_signed", None),
-                    "pattern_shap_directions": getattr(gr, "shap_pattern_directions", None),
-                } if getattr(gr, "shap_embedding_pct", None) is not None else None,
+                    "pattern_shap_directions": getattr(
+                        gr, "shap_pattern_directions", None
+                    ),
+                }
+                if getattr(gr, "shap_embedding_pct", None) is not None
+                else None,
                 "choquet_shapley": _sanitize_choquet_payload(
                     {
                         "shapley_values": getattr(gr, "choquet_shapley_values", None),
-                        "interaction_indices": getattr(gr, "choquet_interaction_indices", None),
+                        "interaction_indices": getattr(
+                            gr, "choquet_interaction_indices", None
+                        ),
                     }
                 )
                 if getattr(gr, "choquet_shapley_values", None) is not None
@@ -357,7 +410,9 @@ def _bundle_dict(b: ResultBundleDB) -> dict:
             "pct_solid": mp.pct_solid,
             # Stored in DB column pct_mucinous (legacy name); value is cribriform % from pipeline
             "pct_cribriform": mp.pct_mucinous,
-        } if mp else None,
+        }
+        if mp
+        else None,
         "attention_overlay_uri": getattr(b, "attention_overlay_uri", None),
         "xai_artifacts": [
             {"artifact_id": a.id, "type": a.artifact_type, "gene": a.gene, "uri": a.uri}
@@ -382,7 +437,13 @@ async def gene_explain(body: dict[str, Any]):
 
     prompt = body.get("prompt", "")
     language = body.get("language", "en")
-    lang_map = {"en": "English", "es": "Spanish", "de": "German", "fr": "French", "pt": "Portuguese"}
+    lang_map = {
+        "en": "English",
+        "es": "Spanish",
+        "de": "German",
+        "fr": "French",
+        "pt": "Portuguese",
+    }
     lang_name = lang_map.get(language, "English")
 
     openai_key = os.getenv("OPENAI_API_KEY", "")
@@ -399,7 +460,10 @@ async def gene_explain(body: dict[str, Any]):
                     "temperature": 0.3,
                     "max_tokens": 400,
                     "messages": [
-                        {"role": "system", "content": f"You are an expert computational pathologist explaining AI mutation predictions. Be concise and clinical (4-6 sentences). Respond in {lang_name}."},
+                        {
+                            "role": "system",
+                            "content": f"You are an expert computational pathologist explaining AI mutation predictions. Be concise and clinical (4-6 sentences). Respond in {lang_name}.",
+                        },
                         {"role": "user", "content": prompt},
                     ],
                 },
@@ -409,5 +473,7 @@ async def gene_explain(body: dict[str, Any]):
                 txt = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return {"explanation": txt}
     except Exception:
-        logger.debug("LLM explanation request failed", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+        logger.debug(
+            "LLM explanation request failed", exc_info=True
+        )  # antes se ignoraba en silencio (Bandit S110)
     return {"explanation": None}

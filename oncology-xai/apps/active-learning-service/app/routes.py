@@ -24,6 +24,7 @@ _job_store: dict[str, dict] = {}
 
 def _storage():
     from oncology_common.storage import StorageClient
+
     return StorageClient(
         endpoint=settings.s3_endpoint,
         access_key=settings.s3_access_key,
@@ -77,7 +78,11 @@ async def submit_corrections(
         _run_correction_pipeline, job_id, case_id, image_id, rb_id, corrections
     )
 
-    return {"job_id": job_id, "status": "PENDING", "corrections_count": len(corrections)}
+    return {
+        "job_id": job_id,
+        "status": "PENDING",
+        "corrections_count": len(corrections),
+    }
 
 
 @router.get("/jobs/{job_id}")
@@ -103,8 +108,10 @@ async def get_corrections(result_bundle_id: str, db: AsyncSession = Depends(get_
         "total": len(corrections),
         "corrections": [
             {
-                "id": c.id, "tile_index": c.tile_index,
-                "tile_x": c.tile_x, "tile_y": c.tile_y,
+                "id": c.id,
+                "tile_index": c.tile_index,
+                "tile_x": c.tile_x,
+                "tile_y": c.tile_y,
                 "original_pattern": c.original_pattern,
                 "corrected_pattern": c.corrected_pattern,
                 "corrected_by": c.corrected_by,
@@ -128,7 +135,9 @@ async def get_all_corrections(db: AsyncSession = Depends(get_db), limit: int = 5
     corrections = result.scalars().all()
     return [
         {
-            "id": c.id, "case_id": c.case_id, "image_id": c.image_id,
+            "id": c.id,
+            "case_id": c.case_id,
+            "image_id": c.image_id,
             "tile_index": c.tile_index,
             "original_pattern": c.original_pattern,
             "corrected_pattern": c.corrected_pattern,
@@ -152,10 +161,13 @@ async def list_model_versions(db: AsyncSession = Depends(get_db)):
         "total": len(versions),
         "versions": [
             {
-                "id": v.id, "version_tag": v.version_tag,
-                "pth_uri": v.pth_uri, "parent_version": v.parent_version,
+                "id": v.id,
+                "version_tag": v.version_tag,
+                "pth_uri": v.pth_uri,
+                "parent_version": v.parent_version,
                 "corrections_count": v.corrections_count,
-                "slide_id": v.slide_id, "notes": v.notes,
+                "slide_id": v.slide_id,
+                "notes": v.notes,
                 "created_at": v.created_at.isoformat() if v.created_at else None,
             }
             for v in versions
@@ -178,9 +190,11 @@ async def _run_correction_pipeline(
         tile_data_key = f"{prefix}/tile_data.npz"
 
         # Get current model version
-        current_versions = sync_db.query(ModelVersionDB).order_by(
-            ModelVersionDB.created_at.desc()
-        ).first()
+        current_versions = (
+            sync_db.query(ModelVersionDB)
+            .order_by(ModelVersionDB.created_at.desc())
+            .first()
+        )
 
         if current_versions:
             current_pth_uri = current_versions.pth_uri
@@ -193,7 +207,9 @@ async def _run_correction_pipeline(
             except Exception:
                 pth_bytes = _read_pth_from_inference_volume()
                 if pth_bytes:
-                    storage.upload_bytes(current_pth_uri, pth_bytes, "application/octet-stream")
+                    storage.upload_bytes(
+                        current_pth_uri, pth_bytes, "application/octet-stream"
+                    )
                     mv = ModelVersionDB(
                         version_tag="original",
                         pth_uri=current_pth_uri,
@@ -209,6 +225,7 @@ async def _run_correction_pipeline(
         current_pth_bytes = storage.download_bytes(current_pth_uri)
 
         from app.delta_train import run_delta_training
+
         new_pth_bytes, version_tag = run_delta_training(
             storage=storage,
             tile_data_key=tile_data_key,
@@ -260,8 +277,13 @@ async def _run_correction_pipeline(
         try:
             from event_contracts.envelope import EventEnvelope
             from event_contracts.publisher import EventPublisher
+
             publisher = EventPublisher(settings.rabbitmq_url)
-            corrected_by = corrections[0].get("corrected_by", "unknown") if corrections else "unknown"
+            corrected_by = (
+                corrections[0].get("corrected_by", "unknown")
+                if corrections
+                else "unknown"
+            )
             envelope = EventEnvelope(
                 event_type="active_learning.correction_applied",
                 producer="active-learning-service",
@@ -285,8 +307,11 @@ async def _run_correction_pipeline(
         import asyncio
 
         from app.reprocess import trigger_reanalysis
+
         loop = asyncio.new_event_loop()
-        reanalysis_result = loop.run_until_complete(trigger_reanalysis(image_id, case_id))
+        reanalysis_result = loop.run_until_complete(
+            trigger_reanalysis(image_id, case_id)
+        )
         loop.close()
 
         reanalysis_status = reanalysis_result.get("status", "UNKNOWN")
@@ -294,20 +319,26 @@ async def _run_correction_pipeline(
 
         if reanalysis_status == "COMPLETED":
             job.update(
-                status="COMPLETED", progress=1.0,
+                status="COMPLETED",
+                progress=1.0,
                 stage="Model updated and slide re-analyzed successfully",
                 new_result_bundle_id=new_rb_id,
                 model_version=version_tag,
             )
         else:
             job.update(
-                status="COMPLETED", progress=0.9,
+                status="COMPLETED",
+                progress=0.9,
                 stage=f"Model updated (v{version_tag}). Re-analysis: {reanalysis_status}",
                 model_version=version_tag,
             )
 
-        logger.info("Correction pipeline complete: %d corrections, model=%s, reanalysis=%s",
-                     len(corrections), version_tag, reanalysis_status)
+        logger.info(
+            "Correction pipeline complete: %d corrections, model=%s, reanalysis=%s",
+            len(corrections),
+            version_tag,
+            reanalysis_status,
+        )
 
     except Exception as e:
         logger.exception("Correction pipeline failed: %s", e)
@@ -320,9 +351,14 @@ def _read_pth_from_inference_volume() -> bytes | None:
     """Read the original .pth from the inference service's model volume via HTTP."""
     try:
         import httpx
-        resp = httpx.get(f"{settings.inference_service_url}/api/v1/checkpoints/status", timeout=10)
+
+        resp = httpx.get(
+            f"{settings.inference_service_url}/api/v1/checkpoints/status", timeout=10
+        )
         if resp.status_code == 200:
             pass
     except Exception:
-        logger.debug("checkpoint status check failed", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+        logger.debug(
+            "checkpoint status check failed", exc_info=True
+        )  # antes se ignoraba en silencio (Bandit S110)
     return None

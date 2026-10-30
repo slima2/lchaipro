@@ -11,7 +11,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 class ImageDB(Base):
     __tablename__ = "images"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     format: Mapped[str] = mapped_column(String(10), nullable=False, default="png")
     storage_uri: Mapped[str] = mapped_column(String(1024), nullable=False)
@@ -21,4 +23,6 @@ class ImageDB(Base):
     magnification: Mapped[str | None] = mapped_column(String(50))
     notes: Mapped[str | None] = mapped_column(String(2000))
     uploaded_by: Mapped[str | None] = mapped_column(String(255))
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )

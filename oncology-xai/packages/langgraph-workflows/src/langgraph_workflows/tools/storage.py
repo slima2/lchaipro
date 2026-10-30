@@ -34,6 +34,7 @@ class StorageTool:
             return None
         try:
             import boto3
+
             self._client = boto3.client(
                 "s3",
                 endpoint_url=S3_ENDPOINT,
@@ -61,7 +62,9 @@ class StorageTool:
             logger.error("Failed to download %s: %s", key, exc)
             raise
 
-    def upload_file(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+    def upload_file(
+        self, key: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> str:
         """Upload data to S3/MinIO and return the URI."""
         if self.use_mock:
             return f"s3://{S3_BUCKET}/{key}"
@@ -98,7 +101,7 @@ class StorageTool:
         """Extract S3 key from full URI."""
         prefix = f"s3://{S3_BUCKET}/"
         if uri.startswith(prefix):
-            return uri[len(prefix):]
+            return uri[len(prefix) :]
         return uri
 
     @staticmethod

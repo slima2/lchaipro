@@ -8,14 +8,24 @@ class Settings(BaseSettings):
     version: str = "2.0.0"
     log_level: str = "INFO"
 
-    postgres_dsn: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
-    postgres_dsn_sync: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
-    rabbitmq_url: str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    postgres_dsn: (
+        str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    )
+    postgres_dsn_sync: (
+        str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    )
+    rabbitmq_url: (
+        str  # obligatoria: la entrega el Secret (sin clave por defecto en el codigo)
+    )
     redis_url: str = "redis://redis:6379/0"
 
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
-    s3_secret_key: str = ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
+    s3_access_key: str = (
+        ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
+    )
+    s3_secret_key: str = (
+        ""  # la entrega el Secret; vacia = credenciales del entorno (IAM)
+    )
     s3_bucket: str = "oncology-xai"
 
     # Model — v2 backbone (CTransPath Swin Tiny + FuzzyArcLoss V2)

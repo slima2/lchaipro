@@ -47,7 +47,9 @@ DISCLAIMER = (
 
 async def gather_evidence(state: GraphState) -> GraphState:
     """Gather all evidence from inference results, EHR, and graph."""
-    state = update_exec(state, status="running", progress=0.1, current_node="gather_evidence")
+    state = update_exec(
+        state, status="running", progress=0.1, current_node="gather_evidence"
+    )
     ctx = state.get("context", {})
     inputs = state.get("inputs", {})
     inter = dict(state.get("_intermediate", {}))
@@ -71,7 +73,9 @@ async def gather_evidence(state: GraphState) -> GraphState:
         image_id = inputs.get("image_id")
         if image_id:
             try:
-                async with httpx.AsyncClient(base_url=INFERENCE_SERVICE_URL, timeout=10.0) as client:
+                async with httpx.AsyncClient(
+                    base_url=INFERENCE_SERVICE_URL, timeout=10.0
+                ) as client:
                     resp = await client.get(f"/api/v1/images/{image_id}/results/latest")
                     if resp.status_code == 200:
                         result = resp.json()
@@ -84,7 +88,9 @@ async def gather_evidence(state: GraphState) -> GraphState:
     ehr_id = inputs.get("ehr_id")
     if ehr_id:
         try:
-            async with httpx.AsyncClient(base_url=EHR_SERVICE_URL, timeout=10.0) as client:
+            async with httpx.AsyncClient(
+                base_url=EHR_SERVICE_URL, timeout=10.0
+            ) as client:
                 resp = await client.get(f"/api/v1/ehr/{ehr_id}/entities")
                 if resp.status_code == 200:
                     evidence["ehr_entities"] = resp.json()
@@ -112,31 +118,37 @@ async def detect_conflicts(state: GraphState) -> GraphState:
     kras = next((m for m in mutations if m.get("mutation") == "KRAS"), None)
 
     if egfr and kras and egfr.get("status") == "POS" and kras.get("status") == "POS":
-        conflicts.append({
-            "type": "MUTUAL_EXCLUSION",
-            "detail": "EGFR and KRAS mutations are typically mutually exclusive in lung adenocarcinoma. "
-                      "Both are predicted as positive. Molecular testing is strongly recommended.",
-        })
+        conflicts.append(
+            {
+                "type": "MUTUAL_EXCLUSION",
+                "detail": "EGFR and KRAS mutations are typically mutually exclusive in lung adenocarcinoma. "
+                "Both are predicted as positive. Molecular testing is strongly recommended.",
+            }
+        )
 
     # Check for inconclusive results
     inconclusive = [m for m in mutations if m.get("status") == "INCONCLUSIVE"]
     if inconclusive:
-        conflicts.append({
-            "type": "INCONCLUSIVE_RESULTS",
-            "detail": f"{len(inconclusive)} mutation prediction(s) are inconclusive: "
-                      f"{', '.join(m['mutation'] for m in inconclusive)}. "
-                      "Consider additional testing.",
-        })
+        conflicts.append(
+            {
+                "type": "INCONCLUSIVE_RESULTS",
+                "detail": f"{len(inconclusive)} mutation prediction(s) are inconclusive: "
+                f"{', '.join(m['mutation'] for m in inconclusive)}. "
+                "Consider additional testing.",
+            }
+        )
 
     # Check if predominant pattern has low confidence
     if patterns:
         top = max(patterns, key=lambda p: p.get("percentage", 0))
         if top.get("score", 0) < 0.5:
-            conflicts.append({
-                "type": "LOW_CONFIDENCE",
-                "detail": f"Predominant pattern '{top.get('pattern')}' has low confidence "
-                          f"(score={top.get('score', 0):.2f}). Review recommended.",
-            })
+            conflicts.append(
+                {
+                    "type": "LOW_CONFIDENCE",
+                    "detail": f"Predominant pattern '{top.get('pattern')}' has low confidence "
+                    f"(score={top.get('score', 0):.2f}). Review recommended.",
+                }
+            )
 
     inter["conflicts"] = conflicts
     state["_intermediate"] = inter
@@ -166,8 +178,10 @@ async def draft_explanation(state: GraphState) -> GraphState:
     sections.append("\n## Histological Pattern Analysis")
     if patterns:
         predominant = max(patterns, key=lambda p: p.get("percentage", 0))
-        sections.append(f"\n**Predominant pattern:** {predominant.get('pattern', 'N/A')} "
-                       f"({predominant.get('percentage', 0):.1f}%)")
+        sections.append(
+            f"\n**Predominant pattern:** {predominant.get('pattern', 'N/A')} "
+            f"({predominant.get('percentage', 0):.1f}%)"
+        )
         sections.append("\n| Pattern | Percentage | Score | Conclusive |")
         sections.append("|---------|-----------|-------|------------|")
         for p in sorted(patterns, key=lambda x: x.get("percentage", 0), reverse=True):
@@ -188,8 +202,10 @@ async def draft_explanation(state: GraphState) -> GraphState:
                 f"| {m.get('mutation', '')} | {m.get('score', 0):.2f} | "
                 f"{m.get('status', '')} | {m.get('evidence_source', 'THESIS_INTERNAL')} |"
             )
-        sections.append("\n*Note: Mutation predictions are based on morphological features and "
-                       "XGBoost modeling. They are NOT equivalent to molecular testing.*")
+        sections.append(
+            "\n*Note: Mutation predictions are based on morphological features and "
+            "XGBoost modeling. They are NOT equivalent to molecular testing.*"
+        )
     else:
         sections.append("\nNo mutation predictions available.")
 
@@ -206,7 +222,9 @@ async def draft_explanation(state: GraphState) -> GraphState:
         sections.append("\n| Entity | Type | Confidence |")
         sections.append("|--------|------|------------|")
         for e in ehr_entities:
-            sections.append(f"| {e.get('text', '')} | {e.get('entity_type', '')} | {e.get('confidence', 0):.2f} |")
+            sections.append(
+                f"| {e.get('text', '')} | {e.get('entity_type', '')} | {e.get('confidence', 0):.2f} |"
+            )
 
     # Disclaimer
     sections.append(f"\n---\n\n{DISCLAIMER}")
@@ -233,8 +251,12 @@ async def validate_claims_guardrails(state: GraphState) -> GraphState:
         fixed_draft = draft
         for v in violations:
             import re
+
             fixed_draft = re.sub(
-                re.escape(v), "[REDACTED — prohibited clinical claim]", fixed_draft, flags=re.IGNORECASE
+                re.escape(v),
+                "[REDACTED — prohibited clinical claim]",
+                fixed_draft,
+                flags=re.IGNORECASE,
             )
         inter["draft"] = fixed_draft
         inter["auto_redacted"] = True
@@ -304,10 +326,18 @@ def _markdown_to_html(md: str) -> str:
             cells = [c.strip() for c in line.split("|")[1:-1]]
             if all(c.startswith("-") for c in cells):
                 continue
-            if line.startswith("| Pattern") or line.startswith("| Gene") or line.startswith("| Entity"):
-                html_parts.append("<table><tr>" + "".join(f"<th>{c}</th>" for c in cells) + "</tr>")
+            if (
+                line.startswith("| Pattern")
+                or line.startswith("| Gene")
+                or line.startswith("| Entity")
+            ):
+                html_parts.append(
+                    "<table><tr>" + "".join(f"<th>{c}</th>" for c in cells) + "</tr>"
+                )
             else:
-                html_parts.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+                html_parts.append(
+                    "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+                )
         elif "DISCLAIMER" in line:
             html_parts.append(f"<div class='disclaimer'>{line}</div>")
         elif line.strip():

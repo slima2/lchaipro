@@ -42,10 +42,14 @@ async def _exc(request: Request, exc: Exception):
     cid = getattr(request.state, "correlation_id", None)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(errorCode="INTERNAL_ERROR", message="Unexpected error", correlationId=cid).model_dump(by_alias=True),
+        content=ErrorResponse(
+            errorCode="INTERNAL_ERROR", message="Unexpected error", correlationId=cid
+        ).model_dump(by_alias=True),
     )
 
 
 @app.get("/healthz", response_model=HealthResponse, tags=["Health"])
 async def health():
-    return HealthResponse(status="healthy", service=settings.service_name, version=settings.version)
+    return HealthResponse(
+        status="healthy", service=settings.service_name, version=settings.version
+    )

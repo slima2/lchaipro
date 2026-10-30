@@ -11,10 +11,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 class AuditEventDB(Base):
     __tablename__ = "audit_events"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_id: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     correlation_id: Mapped[str | None] = mapped_column(String(64), index=True)
     user_id: Mapped[str | None] = mapped_column(String(255))
     case_id: Mapped[str | None] = mapped_column(String(36), index=True)
@@ -23,4 +29,6 @@ class AuditEventDB(Base):
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="SUCCESS")
     details: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )

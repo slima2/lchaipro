@@ -13,12 +13,14 @@ RUN pip install --no-cache-dir /srv/packages/common /srv/packages/event-contract
 
 COPY apps/api-gateway/pyproject.toml .
 COPY apps/api-gateway/app/ app/
-RUN pip install --no-cache-dir -e .
-
 # Sin privilegios de administrador (Trivy DS-0002, SonarQube S6471). HOME en /tmp para cachés (torch, matplotlib)
-RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
+RUN pip install --no-cache-dir -e . \
+ && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 ENV HOME=/tmp
 USER 10001
 
 EXPOSE 8000
+# Para Docker/compose; en Kubernetes manda la readinessProbe del chart
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/metrics', timeout=4)"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

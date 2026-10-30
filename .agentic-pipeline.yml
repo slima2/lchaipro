@@ -1,0 +1,124 @@
+project:
+  name: txt-solca-lchai
+  argocd_app: txt-lchai-preprod
+
+registry:
+  url: registry.gitlab.telconet.ec/docker/images
+
+# Los Dockerfile viven en oncology-xai/apps/<servicio>/ pero usan oncology-xai/ como contexto de build
+# (COPY packages/..., constraints.txt). path = detección de cambios; context = contexto de docker build.
+components:
+  - name: api-gateway
+    path: oncology-xai/apps/api-gateway
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/api-gateway/Dockerfile
+    image: txt-solca-lchai-api-gateway
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: case-service
+    path: oncology-xai/apps/case-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/case-service/Dockerfile
+    image: txt-solca-lchai-case-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: image-service
+    path: oncology-xai/apps/image-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/image-service/Dockerfile
+    image: txt-solca-lchai-image-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: inference-service
+    path: oncology-xai/apps/inference-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/inference-service/Dockerfile
+    image: txt-solca-lchai-inference-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: ehr-service
+    path: oncology-xai/apps/ehr-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/ehr-service/Dockerfile
+    image: txt-solca-lchai-ehr-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: graph-service
+    path: oncology-xai/apps/graph-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/graph-service/Dockerfile
+    image: txt-solca-lchai-graph-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: ontology-admin-service
+    path: oncology-xai/apps/ontology-admin-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/ontology-admin-service/Dockerfile
+    image: txt-solca-lchai-ontology-admin-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: audit-service
+    path: oncology-xai/apps/audit-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/audit-service/Dockerfile
+    image: txt-solca-lchai-audit-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: active-learning-service
+    path: oncology-xai/apps/active-learning-service
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/active-learning-service/Dockerfile
+    image: txt-solca-lchai-active-learning-service
+    extra_paths:
+      - oncology-xai/packages
+      - oncology-xai/constraints.txt
+  - name: webapp
+    path: oncology-xai/apps/webapp
+    context: oncology-xai
+    dockerfile: oncology-xai/apps/webapp/Dockerfile
+    image: txt-solca-lchai-webapp
+    # Sin URL fija: la webapp usa el dominio desde el que se abre
+    build_args:
+      - VITE_API_URL=
+      - VITE_KEYCLOAK_URL=
+
+version_files:
+  - path: oncology-xai/infra/helm/lchai/Chart.yaml
+    updates:
+      - type: regex
+        pattern: 'version: [^\n]+'
+        replacement: 'version: {version}'
+      - type: regex
+        pattern: 'appVersion: "[^"]*"'
+        replacement: 'appVersion: "{version}"'
+
+review:
+  stack: >-
+    LCHAI v2.0 - analisis histologico de cancer de pulmon con IA (SOLCA). Monorepo: webapp React/Vite,
+    api-gateway FastAPI (proxy con auth JWT contra Keycloak realm oncology), 8 microservicios Python
+    (case, image, inference, ehr, graph, ontology-admin, audit, active-learning), RabbitMQ, Redis,
+    Fuseki, PostgreSQL y S3 (SeaweedFS) dentro del cluster. Sin GPU en el cluster: el analisis lo hace un
+    worker remoto en AWS (inferenceWorker.enabled=false, remoteWorker.enabled=true). Solo pre-prod,
+    namespace procesos-txt-lchai-pre.
+  config_paths:
+    - oncology-xai/infra/helm/lchai/values.yaml
+    - oncology-xai/infra/helm/lchai/templates/configmap.yaml
+    - oncology-xai/apps/api-gateway/app/main.py
+
+security:
+  stack: python
+  python_source: oncology-xai/apps
+  blocking: []   # informativo en el primer ciclo; se endurece en promote/preprod-*
+
+deploy:
+  timeout: 600
+  initial_wait: 90
+  poll_interval: 15

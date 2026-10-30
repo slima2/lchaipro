@@ -33,4 +33,7 @@ RUN chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d && \
 USER 101
 
 EXPOSE 3000
+# Para Docker/compose; en Kubernetes manda la readinessProbe del chart
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
 CMD ["nginx", "-g", "daemon off;"]

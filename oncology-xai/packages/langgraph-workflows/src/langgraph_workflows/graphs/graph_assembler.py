@@ -39,7 +39,9 @@ NODE_COLORS = {
 
 async def fetch_case_findings(state: GraphState) -> GraphState:
     """Fetch all findings for a case: patterns, mutations, EHR entities."""
-    state = update_exec(state, status="running", progress=0.1, current_node="fetch_case_findings")
+    state = update_exec(
+        state, status="running", progress=0.1, current_node="fetch_case_findings"
+    )
     ctx = state.get("context", {})
     case_id = ctx.get("case_id")
     inter = dict(state.get("_intermediate", {}))
@@ -48,52 +50,66 @@ async def fetch_case_findings(state: GraphState) -> GraphState:
     edges: list[dict[str, Any]] = []
 
     # Root case node
-    nodes.append({
-        "id": f"case:{case_id}",
-        "type": "Case",
-        "label": f"Case {case_id[:8]}...",
-        "color": NODE_COLORS["Case"],
-    })
+    nodes.append(
+        {
+            "id": f"case:{case_id}",
+            "type": "Case",
+            "label": f"Case {case_id[:8]}...",
+            "color": NODE_COLORS["Case"],
+        }
+    )
 
     # Fetch inference results
     try:
-        async with httpx.AsyncClient(base_url=INFERENCE_SERVICE_URL, timeout=10.0) as client:
-            resp = await client.get(f"/api/v1/images/{state.get('inputs', {}).get('image_id', 'none')}/results/latest")
+        async with httpx.AsyncClient(
+            base_url=INFERENCE_SERVICE_URL, timeout=10.0
+        ) as client:
+            resp = await client.get(
+                f"/api/v1/images/{state.get('inputs', {}).get('image_id', 'none')}/results/latest"
+            )
             if resp.status_code == 200:
                 result = resp.json()
                 # Add pattern nodes
                 for p in result.get("pattern_results", []):
                     pid = f"pattern:{p['pattern']}"
-                    nodes.append({
-                        "id": pid,
-                        "type": "Pattern",
-                        "label": f"{p['pattern']} ({p.get('percentage', 0):.1f}%)",
-                        "color": NODE_COLORS["Pattern"],
-                        "score": p.get("score"),
-                    })
-                    edges.append({
-                        "source": f"case:{case_id}",
-                        "target": pid,
-                        "type": "hasPattern",
-                        "provenance": "inference",
-                    })
+                    nodes.append(
+                        {
+                            "id": pid,
+                            "type": "Pattern",
+                            "label": f"{p['pattern']} ({p.get('percentage', 0):.1f}%)",
+                            "color": NODE_COLORS["Pattern"],
+                            "score": p.get("score"),
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": f"case:{case_id}",
+                            "target": pid,
+                            "type": "hasPattern",
+                            "provenance": "inference",
+                        }
+                    )
 
                 # Add genetic result nodes
                 for g in result.get("genetic_results", []):
                     gid = f"gene:{g['mutation']}"
-                    nodes.append({
-                        "id": gid,
-                        "type": "Gene",
-                        "label": f"{g['mutation']} ({g['status']})",
-                        "color": NODE_COLORS["Gene"],
-                        "score": g.get("score"),
-                    })
-                    edges.append({
-                        "source": f"case:{case_id}",
-                        "target": gid,
-                        "type": "hasMutationPrediction",
-                        "provenance": "xgboost_morphology",
-                    })
+                    nodes.append(
+                        {
+                            "id": gid,
+                            "type": "Gene",
+                            "label": f"{g['mutation']} ({g['status']})",
+                            "color": NODE_COLORS["Gene"],
+                            "score": g.get("score"),
+                        }
+                    )
+                    edges.append(
+                        {
+                            "source": f"case:{case_id}",
+                            "target": gid,
+                            "type": "hasMutationPrediction",
+                            "provenance": "xgboost_morphology",
+                        }
+                    )
     except Exception as exc:
         logger.debug("Could not fetch inference results: %s", exc)
 
@@ -107,18 +123,24 @@ async def fetch_case_findings(state: GraphState) -> GraphState:
                     for ent in resp.json():
                         eid = f"entity:{ent['entity_type']}:{ent['text']}"
                         if not any(n["id"] == eid for n in nodes):
-                            nodes.append({
-                                "id": eid,
-                                "type": ent["entity_type"],
-                                "label": ent["text"],
-                                "color": NODE_COLORS.get(ent["entity_type"], "#78909C"),
-                            })
-                            edges.append({
-                                "source": f"case:{case_id}",
-                                "target": eid,
-                                "type": "hasEHREntity",
-                                "provenance": "ehr_ner",
-                            })
+                            nodes.append(
+                                {
+                                    "id": eid,
+                                    "type": ent["entity_type"],
+                                    "label": ent["text"],
+                                    "color": NODE_COLORS.get(
+                                        ent["entity_type"], "#78909C"
+                                    ),
+                                }
+                            )
+                            edges.append(
+                                {
+                                    "source": f"case:{case_id}",
+                                    "target": eid,
+                                    "type": "hasEHREntity",
+                                    "provenance": "ehr_ner",
+                                }
+                            )
     except Exception as exc:
         logger.debug("Could not fetch EHR entities: %s", exc)
 
@@ -143,7 +165,9 @@ async def query_subgraph(state: GraphState) -> GraphState:
     case_id = ctx.get("case_id")
 
     try:
-        async with httpx.AsyncClient(base_url=GRAPH_SERVICE_URL, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=GRAPH_SERVICE_URL, timeout=10.0
+        ) as client:
             resp = await client.get(
                 f"/api/v1/cases/{case_id}/graph",
                 params={"include_inferred": "true"},
@@ -196,21 +220,22 @@ async def fuse_annotate_provenance(state: GraphState) -> GraphState:
     }
 
     for gene_node in gene_nodes:
-        gene_name = gene_node["id"].split(":")[-1] if ":" in gene_node["id"] else ""
         # Extract gene name from label
         for assoc_gene, patterns in associations.items():
             if assoc_gene.lower() in gene_node.get("label", "").lower():
                 for pattern_node in pattern_nodes:
                     for pat in patterns:
                         if pat.lower() in pattern_node.get("label", "").lower():
-                            edges.append({
-                                "source": gene_node["id"],
-                                "target": pattern_node["id"],
-                                "type": "associatedWith",
-                                "provenance": "literature_inference",
-                                "asserted": False,
-                                "timestamp": now_iso,
-                            })
+                            edges.append(
+                                {
+                                    "source": gene_node["id"],
+                                    "target": pattern_node["id"],
+                                    "type": "associatedWith",
+                                    "provenance": "literature_inference",
+                                    "asserted": False,
+                                    "timestamp": now_iso,
+                                }
+                            )
 
     inter["nodes"] = nodes
     inter["edges"] = edges
@@ -226,6 +251,7 @@ async def build_layout(state: GraphState) -> GraphState:
 
     # Simple circular layout for nodes
     import math
+
     n = len(nodes)
     radius = 200
     for i, node in enumerate(nodes):
@@ -252,7 +278,9 @@ async def persist_snapshot(state: GraphState) -> GraphState:
 
     # Try persisting via graph-service API
     try:
-        async with httpx.AsyncClient(base_url=GRAPH_SERVICE_URL, timeout=10.0) as client:
+        async with httpx.AsyncClient(
+            base_url=GRAPH_SERVICE_URL, timeout=10.0
+        ) as client:
             resp = await client.post(
                 f"/api/v1/cases/{case_id}/graph:rebuild",
                 params={"include_inferred": "true"},
@@ -265,13 +293,16 @@ async def persist_snapshot(state: GraphState) -> GraphState:
 
     # Also persist to S3 for archival
     storage = get_storage_tool()
-    snapshot_data = json.dumps({
-        "id": snapshot_id,
-        "case_id": case_id,
-        "nodes": inter.get("nodes", []),
-        "edges": inter.get("edges", []),
-        "ontology_versions": inter.get("ontology_versions", {}),
-    }, indent=2).encode("utf-8")
+    snapshot_data = json.dumps(
+        {
+            "id": snapshot_id,
+            "case_id": case_id,
+            "nodes": inter.get("nodes", []),
+            "edges": inter.get("edges", []),
+            "ontology_versions": inter.get("ontology_versions", {}),
+        },
+        indent=2,
+    ).encode("utf-8")
     storage.upload_file(f"graphs/{snapshot_id}.json", snapshot_data, "application/json")
 
     state["outputs"] = outputs
@@ -293,24 +324,105 @@ def _mock_case_graph(case_id: str) -> dict[str, Any]:
     """Generate mock graph data for development."""
     return {
         "nodes": [
-            {"id": f"case:{case_id}", "type": "Case", "label": f"Case {case_id[:8]}...", "color": "#42A5F5"},
-            {"id": "gene:EGFR", "type": "Gene", "label": "EGFR (POS)", "color": "#66BB6A"},
-            {"id": "gene:KRAS", "type": "Gene", "label": "KRAS (NEG)", "color": "#66BB6A"},
-            {"id": "gene:TP53", "type": "Gene", "label": "TP53 (INC)", "color": "#66BB6A"},
-            {"id": "dx:adenocarcinoma", "type": "Diagnosis", "label": "Adenocarcinoma", "color": "#FF7043"},
-            {"id": "pattern:lepidic", "type": "Pattern", "label": "Lepidic (32%)", "color": "#AB47BC"},
-            {"id": "pattern:acinar", "type": "Pattern", "label": "Acinar (27%)", "color": "#AB47BC"},
-            {"id": "pattern:papillary", "type": "Pattern", "label": "Papillary (22%)", "color": "#AB47BC"},
+            {
+                "id": f"case:{case_id}",
+                "type": "Case",
+                "label": f"Case {case_id[:8]}...",
+                "color": "#42A5F5",
+            },
+            {
+                "id": "gene:EGFR",
+                "type": "Gene",
+                "label": "EGFR (POS)",
+                "color": "#66BB6A",
+            },
+            {
+                "id": "gene:KRAS",
+                "type": "Gene",
+                "label": "KRAS (NEG)",
+                "color": "#66BB6A",
+            },
+            {
+                "id": "gene:TP53",
+                "type": "Gene",
+                "label": "TP53 (INC)",
+                "color": "#66BB6A",
+            },
+            {
+                "id": "dx:adenocarcinoma",
+                "type": "Diagnosis",
+                "label": "Adenocarcinoma",
+                "color": "#FF7043",
+            },
+            {
+                "id": "pattern:lepidic",
+                "type": "Pattern",
+                "label": "Lepidic (32%)",
+                "color": "#AB47BC",
+            },
+            {
+                "id": "pattern:acinar",
+                "type": "Pattern",
+                "label": "Acinar (27%)",
+                "color": "#AB47BC",
+            },
+            {
+                "id": "pattern:papillary",
+                "type": "Pattern",
+                "label": "Papillary (22%)",
+                "color": "#AB47BC",
+            },
         ],
         "edges": [
-            {"source": f"case:{case_id}", "target": "dx:adenocarcinoma", "type": "hasDiagnosis", "provenance": "ehr"},
-            {"source": f"case:{case_id}", "target": "gene:EGFR", "type": "hasMutationPrediction", "provenance": "inference"},
-            {"source": f"case:{case_id}", "target": "gene:KRAS", "type": "hasMutationPrediction", "provenance": "inference"},
-            {"source": f"case:{case_id}", "target": "gene:TP53", "type": "hasMutationPrediction", "provenance": "inference"},
-            {"source": f"case:{case_id}", "target": "pattern:lepidic", "type": "hasPattern", "provenance": "inference"},
-            {"source": f"case:{case_id}", "target": "pattern:acinar", "type": "hasPattern", "provenance": "inference"},
-            {"source": f"case:{case_id}", "target": "pattern:papillary", "type": "hasPattern", "provenance": "inference"},
-            {"source": "gene:EGFR", "target": "pattern:lepidic", "type": "associatedWith", "provenance": "literature", "asserted": False},
+            {
+                "source": f"case:{case_id}",
+                "target": "dx:adenocarcinoma",
+                "type": "hasDiagnosis",
+                "provenance": "ehr",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "gene:EGFR",
+                "type": "hasMutationPrediction",
+                "provenance": "inference",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "gene:KRAS",
+                "type": "hasMutationPrediction",
+                "provenance": "inference",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "gene:TP53",
+                "type": "hasMutationPrediction",
+                "provenance": "inference",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "pattern:lepidic",
+                "type": "hasPattern",
+                "provenance": "inference",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "pattern:acinar",
+                "type": "hasPattern",
+                "provenance": "inference",
+            },
+            {
+                "source": f"case:{case_id}",
+                "target": "pattern:papillary",
+                "type": "hasPattern",
+                "provenance": "inference",
+            },
+            {
+                "source": "gene:EGFR",
+                "target": "pattern:lepidic",
+                "type": "associatedWith",
+                "provenance": "literature",
+                "asserted": False,
+            },
         ],
     }
 

@@ -64,7 +64,9 @@ def create_initial_state(
     patient_id: str | None = None,
 ) -> GraphState:
     return GraphState(
-        identity=Identity(correlation_id=correlation_id, user_id=user_id, roles=roles or []).model_dump(),
+        identity=Identity(
+            correlation_id=correlation_id, user_id=user_id, roles=roles or []
+        ).model_dump(),
         context=Context(patient_id=patient_id, case_id=case_id).model_dump(),
         inputs=Inputs().model_dump(),
         execution=Execution().model_dump(),

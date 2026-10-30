@@ -29,4 +29,8 @@ app.include_router(router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": settings.service_name, "version": settings.version}
+    return {
+        "status": "ok",
+        "service": settings.service_name,
+        "version": settings.version,
+    }

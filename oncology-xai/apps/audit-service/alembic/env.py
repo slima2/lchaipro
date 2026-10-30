@@ -15,7 +15,10 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-db_url = os.getenv("POSTGRES_DSN", os.getenv("POSTGRES_DSN_SYNC", config.get_main_option("sqlalchemy.url")))
+db_url = os.getenv(
+    "POSTGRES_DSN",
+    os.getenv("POSTGRES_DSN_SYNC", config.get_main_option("sqlalchemy.url")),
+)
 if db_url and db_url.startswith("postgresql+asyncpg"):
     db_url = db_url.replace("postgresql+asyncpg", "postgresql")
 config.set_main_option("sqlalchemy.url", db_url or "")
