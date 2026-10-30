@@ -32,6 +32,13 @@ RUN chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d && \
     sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf
 # CVEs de alpine 3.24 (CVE-2026-111497 brotli-libs, CVE-2026-92392 curl/libcurl): parchear
 # los paquetes del sistema a la version con fix antes de arrancar.
+# Se unpinea a proposito: siempre la ultima version parcheada del repo alpine 3.24.
+# hadolint ignore=DL3018
 RUN apk add --no-cache --upgrade brotli-libs curl libcurl
 USER 101
 
+EXPOSE 3000
+# Para Docker/compose; en Kubernetes manda la readinessProbe del chart
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+CMD ["nginx", "-g", "daemon off;"]

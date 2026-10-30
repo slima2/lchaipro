@@ -26,3 +26,8 @@ ENV HOME=/tmp
 RUN pip uninstall -y pip
 USER 10001
 
+EXPOSE 8008
+# Para Docker/compose; en Kubernetes manda la readinessProbe del chart
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=4)"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8008"]
