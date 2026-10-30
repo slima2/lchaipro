@@ -191,16 +191,16 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
-Nombre de un workload (Deployment/StatefulSet/Job): <workloadPrefix>-<nombre>, p. ej. txt-solca-api-gateway.
-Sin workloadPrefix queda el nombre simple. Los Service no cambian (los servicios se siguen llamando api-gateway, postgres...).
+Nombre de un workload (Deployment/StatefulSet/Job): <workloadPrefix>-<nombre>-<workloadSuffix>,
+p. ej. txt-solca-lchai-postgres-pre. Prefijo y sufijo son opcionales; sin ninguno queda el nombre simple. Los Service no cambian (los servicios se siguen llamando api-gateway, postgres...).
 Uso: include "lchai.wl" (dict "root" $ "name" "api-gateway")
 */}}
 {{- define "lchai.wl" -}}
-{{- if .root.Values.workloadPrefix -}}
-{{ .root.Values.workloadPrefix }}-{{ .name }}
-{{- else -}}
-{{ .name }}
-{{- end -}}
+{{- $parts := list -}}
+{{- with .root.Values.workloadPrefix }}{{ $parts = append $parts . }}{{ end -}}
+{{- $parts = append $parts .name -}}
+{{- with .root.Values.workloadSuffix }}{{ $parts = append $parts . }}{{ end -}}
+{{- join "-" $parts -}}
 {{- end -}}
 
 {{/* Keycloak externo (keycloak.external.enabled): no se despliega Keycloak en el namespace; devuelve "true" o vacío */}}

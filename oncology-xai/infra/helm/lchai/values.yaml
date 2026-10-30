@@ -184,9 +184,10 @@ localDeps:
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
 
 # Autenticación en el gateway
-# Prefijo de los nombres de Deployment/StatefulSet/Job: <workloadPrefix>-<componente> (p. ej. txt-solca-api-gateway).
-# Los Service no cambian. Vacío = nombres simples (api-gateway, postgres...).
+# Nombres de Deployment/StatefulSet/Job: <workloadPrefix>-<componente>-<workloadSuffix>
+# (p. ej. txt-solca-lchai-postgres-pre). Los Service no cambian. Vacíos = nombres simples (api-gateway, postgres...).
 workloadPrefix: ""
+workloadSuffix: ""
 
 auth:
   jwtIssuer: ""         # vacío = <publicUrl>/realms/<realm> si hay publicUrl
