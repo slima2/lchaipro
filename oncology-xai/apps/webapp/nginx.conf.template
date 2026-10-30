@@ -4,7 +4,8 @@
 #   CSP_S3_ORIGIN: origen del almacenamiento S3 al que el navegador sube y del que descarga (URL firmadas).
 #   CSP_KEYCLOAK_ORIGIN: origen de un Keycloak externo (vacío si Keycloak va detrás del mismo dominio).
 #   KEYCLOAK_URL / KEYCLOAK_REALM / KEYCLOAK_CLIENT_ID: configuración de login que la webapp lee en runtime
-#   desde /runtime-config.js (vacío = mismo dominio / valores por defecto de la compilación).
+#   desde /runtime-config.js (vacío = mismo dominio / valores por defecto de la compilación). El chart los
+#   rellena desde keycloak.external.url, keycloak.realm y keycloak.webClientId.
 
 server {
     listen 3000;
