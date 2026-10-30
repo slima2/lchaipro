@@ -35,6 +35,7 @@ RUN chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d && \
 # Se unpinea a proposito: siempre la ultima version parcheada del repo alpine 3.24.
 # hadolint ignore=DL3018
 RUN apk add --no-cache --upgrade brotli-libs curl libcurl
+LABEL ec.telconet.stack="txt-solca-lchai"
 USER 101
 
 EXPOSE 3000

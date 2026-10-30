@@ -179,3 +179,13 @@ securityContext:
     sizeLimit: 1Gi
 {{- end }}
 {{- end -}}
+
+{{/* imagePullSecrets adicionales (p.ej. harbor-pull-secret). Los de la ServiceAccount se suman. */}}
+{{- define "lchai.imagePullSecrets" -}}
+{{- with .Values.image.pullSecrets -}}
+imagePullSecrets:
+{{- range . }}
+- name: {{ . }}
+{{- end }}
+{{- end }}
+{{- end -}}

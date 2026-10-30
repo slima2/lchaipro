@@ -21,6 +21,7 @@ spec:
       initContainers:
         {{- include "lchai.fixPermsInit" (dict "image" .Values.rabbitmq.image "path" "/var/lib/rabbitmq" "volume" "data") | nindent 8 }}
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: rabbitmq
           image: {{ .Values.rabbitmq.image }}

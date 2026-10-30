@@ -23,6 +23,7 @@ ENV HOME=/tmp
 # los hallazgos msgpack/urllib3/setuptools que reporta sec:image-scan (dependencias internas de pip,
 # no de la app). Ningun servicio necesita pip en runtime.
 RUN pip uninstall -y pip
+LABEL ec.telconet.stack="txt-solca-lchai"
 USER 10001
 
 EXPOSE 8007

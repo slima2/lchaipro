@@ -19,6 +19,9 @@ image:
   pullPolicy: Always
   # Etiqueta por servicio; si un servicio no aparece, usa image.tag
   tags: {}
+  # Secrets de pull adicionales para los pods (p. ej. [harbor-pull-secret]). Se suman a los de la
+  # ServiceAccount del namespace. [] = solo los de la ServiceAccount.
+  pullSecrets: []
 
 # Selectores de nodo por grupo. {} = sin nodeSelector
 nodeSelector:

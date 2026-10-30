@@ -28,6 +28,7 @@ ENV HOME=/tmp
 RUN pip uninstall -y pip && \
     rm -rf /usr/local/lib/python3.12/site-packages/owlready2/pellet \
            /usr/local/lib/python3.12/site-packages/owlready2/hermit
+LABEL ec.telconet.stack="txt-solca-lchai"
 USER 10001
 
 EXPOSE 8006

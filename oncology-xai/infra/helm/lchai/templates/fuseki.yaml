@@ -21,6 +21,7 @@ spec:
       initContainers:
         {{- include "lchai.fixPermsInit" (dict "image" .Values.fuseki.image "path" "/fuseki/databases" "volume" "data") | nindent 8 }}
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: fuseki
           image: {{ .Values.fuseki.image }}

@@ -29,6 +29,7 @@ spec:
       {{- include "lchai.depPodContext" (dict "gid" 70) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
       restartPolicy: OnFailure
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: psql
           image: {{ .Values.dbSchema.image }}
