@@ -16,15 +16,17 @@ data:
   S3_ENDPOINT_EXTERNAL: {{ . | quote }}
   {{- end }}
   S3_BUCKET: {{ .Values.s3.bucket | quote }}
-  KEYCLOAK_URL: "http://keycloak:8080"
+  KEYCLOAK_URL: {{ include "lchai.kcBaseUrl" . | quote }}
   # Validación estricta de tokens en el gateway (S-07) y CORS (S-17)
   {{- $pub := include "lchai.effectivePublicUrl" . }}
-  JWT_ISSUER: {{ .Values.auth.jwtIssuer | default (ternary (printf "%s/realms/%s" $pub .Values.keycloak.realm) "" (not (empty $pub))) | quote }}
+  {{- /* Con Keycloak externo el emisor del token es la URL de ese Keycloak, no el dominio público de la app */}}
+  {{- $issBase := ternary (include "lchai.kcBaseUrl" .) $pub (not (empty (include "lchai.kcExternal" .))) }}
+  JWT_ISSUER: {{ .Values.auth.jwtIssuer | default (ternary (printf "%s/realms/%s" $issBase .Values.keycloak.realm) "" (not (empty $issBase))) | quote }}
   JWT_AUDIENCE: {{ .Values.auth.jwtAudience | default "" | quote }}
   CORS_ORIGINS: {{ .Values.auth.corsOrigins | default "" | quote }}
-  KEYCLOAK_REALM: "oncology"
+  KEYCLOAK_REALM: {{ .Values.keycloak.realm | quote }}
   KEYCLOAK_CLIENT_ID: "oncology-api"
-  JWKS_URL: "http://keycloak:8080/realms/oncology/protocol/openid-connect/certs"
+  JWKS_URL: {{ printf "%s/realms/%s/protocol/openid-connect/certs" (include "lchai.kcBaseUrl" .) .Values.keycloak.realm | quote }}
   FUSEKI_URL: "http://fuseki:3030"
   FUSEKI_DATASET: "oncology"
   MODEL_BACKEND: {{ .Values.inferenceWorker.modelBackend | quote }}

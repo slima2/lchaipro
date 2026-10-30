@@ -16,7 +16,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   # Un nombre por revisión: no es un hook, para no bloquear helm --wait
-  name: db-schema-{{ .Release.Revision }}
+  name: {{ include "lchai.wl" (dict "root" $ "name" "db-schema") }}-{{ .Release.Revision }}
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 30

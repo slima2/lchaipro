@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: rabbitmq
+  name: {{ include "lchai.wl" (dict "root" $ "name" "rabbitmq") }}
 spec:
   serviceName: rabbitmq
   replicas: {{ .Values.rabbitmq.replicas }}

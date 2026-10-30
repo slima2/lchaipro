@@ -189,3 +189,30 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/*
+Nombre de un workload (Deployment/StatefulSet/Job): <workloadPrefix>-<nombre>, p. ej. txt-solca-api-gateway.
+Sin workloadPrefix queda el nombre simple. Los Service no cambian (los servicios se siguen llamando api-gateway, postgres...).
+Uso: include "lchai.wl" (dict "root" $ "name" "api-gateway")
+*/}}
+{{- define "lchai.wl" -}}
+{{- if .root.Values.workloadPrefix -}}
+{{ .root.Values.workloadPrefix }}-{{ .name }}
+{{- else -}}
+{{ .name }}
+{{- end -}}
+{{- end -}}
+
+{{/* Keycloak externo (keycloak.external.enabled): no se despliega Keycloak en el namespace; devuelve "true" o vacío */}}
+{{- define "lchai.kcExternal" -}}
+{{- if and .Values.keycloak.external .Values.keycloak.external.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/* URL base de Keycloak que usan los servicios y el webapp: la externa (sin "/" final) o el Service interno */}}
+{{- define "lchai.kcBaseUrl" -}}
+{{- if include "lchai.kcExternal" . -}}
+{{ required "keycloak.external.url es obligatorio con keycloak.external.enabled" .Values.keycloak.external.url | trimSuffix "/" }}
+{{- else -}}
+http://keycloak:8080
+{{- end -}}
+{{- end -}}

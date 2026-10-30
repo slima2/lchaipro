@@ -38,7 +38,7 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: inference-worker
+  name: {{ include "lchai.wl" (dict "root" $ "name" "inference-worker") }}
 spec:
   replicas: 1
   {{- with .Values.inferenceWorker.updateStrategy }}

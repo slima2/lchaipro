@@ -79,6 +79,13 @@ environment: production
 
 keycloak:
   realm: oncology
+  # Client público del webapp en el realm (el del API es oncology-api, bearer-only)
+  webClientId: oncology-webapp
+  # Keycloak externo (p. ej. el Keycloak de test del cluster): no se despliega Keycloak en el namespace, ni su Service,
+  # ni rutas de Keycloak en el ingress; los servicios validan contra <url>/realms/<realm> y el webapp hace login ahí.
+  external:
+    enabled: false
+    url: ""            # p. ej. https://keycloak.ai-dev.i.telconet.net (sin "/" final)
   # Obligatoria: pasarla con --set keycloak.adminPassword=... (nunca en el repo)
   adminPassword: ""
   image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/keycloak:26.8.1-r1
@@ -177,6 +184,10 @@ localDeps:
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
 
 # Autenticación en el gateway
+# Prefijo de los nombres de Deployment/StatefulSet/Job: <workloadPrefix>-<componente> (p. ej. txt-solca-api-gateway).
+# Los Service no cambian. Vacío = nombres simples (api-gateway, postgres...).
+workloadPrefix: ""
+
 auth:
   jwtIssuer: ""         # vacío = <publicUrl>/realms/<realm> si hay publicUrl
   jwtAudience: ""       # "oncology-api" cuando el realm tiene el mapper de audiencia

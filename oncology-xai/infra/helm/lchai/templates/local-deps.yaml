@@ -16,7 +16,7 @@ data:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
+  name: {{ include "lchai.wl" (dict "root" $ "name" "postgres") }}
 spec:
   serviceName: postgres
   replicas: 1
@@ -125,7 +125,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: redis
+  name: {{ include "lchai.wl" (dict "root" $ "name" "redis") }}
 spec:
   replicas: 1
   selector:
@@ -191,7 +191,7 @@ stringData:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: s3
+  name: {{ include "lchai.wl" (dict "root" $ "name" "s3") }}
 spec:
   serviceName: s3
   replicas: 1
@@ -286,7 +286,7 @@ kind: Job
 metadata:
   # Recurso normal (no hook): el worker de inferencia necesita los buckets para arrancar, y un hook
   # post-install esperaría a que el worker esté listo (bloqueo mutuo con --wait).
-  name: s3-buckets-{{ .Release.Revision }}
+  name: {{ include "lchai.wl" (dict "root" $ "name" "s3-buckets") }}-{{ .Release.Revision }}
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 30

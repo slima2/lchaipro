@@ -1,5 +1,5 @@
 {{- if .Values.layers.platform }}
-{{- if .Values.keycloak.importRealm }}
+{{- if and .Values.keycloak.importRealm (not (include "lchai.kcExternal" .)) }}
 {{- /* Realm "oncology" del repositorio, agregando la URL pública a los clientes de la webapp */ -}}
 {{- $url := .Values.publicUrl | default (printf "https://%s" .Values.domain) -}}
 {{- $realm := .Files.Get "files/realm-export.json" -}}

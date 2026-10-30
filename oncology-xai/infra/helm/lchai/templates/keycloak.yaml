@@ -1,8 +1,8 @@
-{{- if .Values.layers.platform }}
+{{- if and .Values.layers.platform (not (include "lchai.kcExternal" .)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: keycloak
+  name: {{ include "lchai.wl" (dict "root" $ "name" "keycloak") }}
 spec:
   replicas: 1
   selector:

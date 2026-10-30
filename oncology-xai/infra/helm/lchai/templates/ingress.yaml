@@ -38,6 +38,8 @@ spec:
                 name: api-gateway
                 port:
                   number: 8000
+          {{- /* Con Keycloak externo no hay rutas a Keycloak en este dominio */}}
+          {{- if not (include "lchai.kcExternal" .) }}
           - path: /realms/{{ .Values.keycloak.realm }}
             pathType: Prefix
             backend:
@@ -67,6 +69,7 @@ spec:
                 name: keycloak
                 port:
                   number: 8080
+          {{- end }}
           {{- end }}
           - path: /
             pathType: Prefix

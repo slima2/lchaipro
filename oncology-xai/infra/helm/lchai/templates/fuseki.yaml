@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: fuseki
+  name: {{ include "lchai.wl" (dict "root" $ "name" "fuseki") }}
 spec:
   serviceName: fuseki
   replicas: 1
