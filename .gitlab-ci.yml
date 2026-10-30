@@ -285,8 +285,8 @@ update-fleet:
       FLEET_VALUES="stacks/txt/lchai/envs/preprod/values.yaml"
       FLEET_ENV="stacks/txt/lchai/envs/preprod/env.yaml"
       if [ "$FULL_RELEASE" = "true" ]; then
-        # Las imágenes de la app viven en Harbor (job harbor-push). Las deps/* siguen en GitLab (regcred).
-        yq -i '.image.registry = "harbor-llm.ai-dev.i.telconet.net" | .image.prefix = "txt-solca/lchai" | .image.separator = "-" | .image.pullSecrets = ["harbor-pull-secret"]' "$FLEET_VALUES"
+        # Las imágenes de la app viven en Harbor (job harbor-push). Las deps/* siguen en GitLab (regcred). Un imagePullSecrets en el pod REEMPLAZA al de la ServiceAccount, por eso van los dos.
+        yq -i '.image.registry = "harbor-llm.ai-dev.i.telconet.net" | .image.prefix = "txt-solca/lchai" | .image.separator = "-" | .image.pullSecrets = ["regcred", "harbor-pull-secret"]' "$FLEET_VALUES"
         for SVC in api-gateway case-service image-service inference-service ehr-service graph-service ontology-admin-service audit-service active-learning-service webapp; do
           FLAG="CHANGED_$(echo "$SVC" | tr 'a-z-' 'A-Z_')"
           if [ "$(eval echo \$$FLAG)" = "true" ]; then
