@@ -30,6 +30,11 @@ ENV CSP_S3_ORIGIN=""
 # Necesita escribir la configuración generada desde la plantilla, la caché y el archivo de PID.
 RUN chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d && \
     sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf
+# CVEs de alpine 3.24 (CVE-2026-111497 brotli-libs, CVE-2026-92392 curl/libcurl): parchear
+# los paquetes del sistema a la version con fix antes de arrancar.
+# Se unpinea a proposito: siempre la ultima version parcheada del repo alpine 3.24.
+# hadolint ignore=DL3018
+RUN apk add --no-cache --upgrade brotli-libs curl libcurl
 USER 101
 
 EXPOSE 3000

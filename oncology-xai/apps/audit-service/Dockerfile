@@ -19,6 +19,10 @@ COPY apps/audit-service/alembic/ alembic/
 RUN pip install --no-cache-dir -e . \
  && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 ENV HOME=/tmp
+# pip fuera de la imagen runtime: su SBOM vendorizado (_vendor/bom.cdx.json) es la fuente de
+# los hallazgos msgpack/urllib3/setuptools que reporta sec:image-scan (dependencias internas de pip,
+# no de la app). Ningun servicio necesita pip en runtime.
+RUN pip uninstall -y pip
 USER 10001
 
 EXPOSE 8007

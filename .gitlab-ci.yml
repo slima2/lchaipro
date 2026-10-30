@@ -39,6 +39,35 @@ variables:
   # Forzar generación del security-pipeline completo en cada MR push
   FORCE_SECURITY_CHECKS: "true"
 
+# Override: separar el runner de seguridad (shared, default) del runner de
+# build (cluster propio). El componente agentic-pipeline solo expone
+# RUNNER_TAG_1/2 como variable GLOBAL aplicada por igual a todo lo generado
+# (security-pipeline.yml y build-pipeline.yml se generan dentro del job
+# "analyze" con las mismas env vars), así que no hay forma de separarlos vía
+# inputs del componente. Se re-exportan las variables entre gen-security y
+# gen-build (mismo patrón que general-services/stt-service y ocr-api-services):
+#   - security-pipeline.yml (sec:sonarqube, sec:sca, etc.) -> se queda en
+#     telconet-shared-docker-1/2 (default): el runner del cluster no alcanza
+#     SonarQube (172.24.15.x no es alcanzable desde la subred del cluster).
+#   - build-pipeline.yml (build-push:*, sec:image-scan:*, sec:sbom) ->
+#     procesos-cpu-runner: el runner compartido bloquea el push de imágenes
+#     >3GB (authz plugin dso-size-guard); la de inference-service pesa ~8GB
+#     (pesos de modelos). El runner del cluster usa executor Kubernetes con
+#     Docker-in-Docker efímero (dockerd nuevo por job), sin ese plugin.
+# NOTA: este override reemplaza el "script:" del job "analyze" del componente
+# v1 (engine v1.44.0). Si el componente cambia esos pasos internos, hay que
+# actualizar este bloque a mano.
+analyze:
+  script:
+    - agentic-engine version-bump
+    - set -a && . ./release.env && set +a
+    - export RUNNER_TAG_1="telconet-shared-docker-1"
+    - export RUNNER_TAG_2="telconet-shared-docker-2"
+    - agentic-engine gen-security
+    - export RUNNER_TAG_1="procesos-cpu-runner"
+    - export RUNNER_TAG_2="procesos-cpu-runner"
+    - agentic-engine gen-build
+
 # Override: allow_failure en dev porque las imágenes no existen hasta el primer
 # build en master (CHART-3 corre antes de build-trigger en el grafo del template).
 # El endurecimiento real ocurre en la rama promote/preprod-* vía
