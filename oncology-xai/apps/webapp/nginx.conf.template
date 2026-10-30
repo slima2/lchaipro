@@ -2,6 +2,9 @@
 # (/etc/nginx/templates -> /etc/nginx/conf.d). Solo se sustituyen variables de entorno definidas,
 # así que las variables propias de nginx ($uri, etc.) quedan intactas.
 #   CSP_S3_ORIGIN: origen del almacenamiento S3 al que el navegador sube y del que descarga (URL firmadas).
+#   CSP_KEYCLOAK_ORIGIN: origen de un Keycloak externo (vacío si Keycloak va detrás del mismo dominio).
+#   KEYCLOAK_URL / KEYCLOAK_REALM / KEYCLOAK_CLIENT_ID: configuración de login que la webapp lee en runtime
+#   desde /runtime-config.js (vacío = mismo dominio / valores por defecto de la compilación).
 
 server {
     listen 3000;
@@ -9,7 +12,7 @@ server {
     root /usr/share/nginx/html;
 
     # Cabeceras de seguridad (se repiten en cada location porque add_header no se hereda si el location define alguna)
-    set $csp "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${CSP_S3_ORIGIN}; connect-src 'self' ${CSP_S3_ORIGIN}; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
+    set $csp "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${CSP_S3_ORIGIN}; connect-src 'self' ${CSP_S3_ORIGIN} ${CSP_KEYCLOAK_ORIGIN}; frame-src 'self' ${CSP_KEYCLOAK_ORIGIN}; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
 
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -20,6 +23,15 @@ server {
         add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         try_files $uri =404;
+    }
+
+    # Configuración de login en runtime (la lee src/auth/keycloak.ts); sin caché para que un cambio de config aplique al reiniciar
+    location = /runtime-config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Content-Security-Policy $csp always;
+        add_header X-Content-Type-Options "nosniff" always;
+        return 200 'window.__LCHAI__={keycloakUrl:"${KEYCLOAK_URL}",keycloakRealm:"${KEYCLOAK_REALM}",keycloakClientId:"${KEYCLOAK_CLIENT_ID}"};';
     }
 
     location / {

@@ -6,8 +6,10 @@ RUN npm install
 
 COPY apps/webapp/ .
 
-ARG VITE_API_URL=https://lchai.gptfy.biz
-ARG VITE_KEYCLOAK_URL=https://lchai.gptfy.biz
+# Sin URL por defecto: la webapp usa el dominio desde el que se abre (una sola imagen para cualquier entorno).
+# Keycloak se configura en runtime (KEYCLOAK_URL/REALM/CLIENT_ID del contenedor, ver nginx.conf.template).
+ARG VITE_API_URL=
+ARG VITE_KEYCLOAK_URL=
 ARG VITE_KEYCLOAK_REALM=oncology
 ARG VITE_KEYCLOAK_CLIENT_ID=oncology-webapp
 
@@ -24,7 +26,11 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Configuración con cabeceras de seguridad (CSP, X-Frame-Options, nosniff, Referrer-Policy, HSTS) y server_tokens off
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY apps/webapp/nginx.conf.template /etc/nginx/templates/default.conf.template
-ENV CSP_S3_ORIGIN=""
+ENV CSP_S3_ORIGIN="" \
+    CSP_KEYCLOAK_ORIGIN="" \
+    KEYCLOAK_URL="" \
+    KEYCLOAK_REALM="oncology" \
+    KEYCLOAK_CLIENT_ID="oncology-webapp"
 
 # Sin privilegios de administrador (Trivy DS-0002, SonarQube S6471): usuario nginx (uid 101).
 # Necesita escribir la configuración generada desde la plantilla, la caché y el archivo de PID.
