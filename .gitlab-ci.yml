@@ -67,7 +67,18 @@ analyze:
     - export RUNNER_TAG_1="procesos-cpu-runner"
     - export RUNNER_TAG_2="procesos-cpu-runner"
     - agentic-engine gen-build
-
+    # build-push:* se queda en procesos-cpu-runner (dso-size-guard de los shared
+    # bloquea push >3GB). Pero sec:image-scan:* y sec:sbom:* usan trivy
+    # --skip-db-update --cache-dir /data/scan-data/db/trivy (--image-src remote,
+    # sin daemon docker): esa DB solo existe en los shared runners, en
+    # procesos-cpu-runner falla con "--skip-db-update cannot be specified on the
+    # first run". Reescribimos solo los tags de esos jobs.
+    - |
+      awk '
+        /^[^ #].*:[ ]*$/ { shared = ($0 ~ /^sec:(image-scan|sbom):/); n = 0 }
+        shared && /^        - procesos-cpu-runner[ ]*$/ { n++; print "        - telconet-shared-docker-" n; next }
+        { print }
+      ' build-pipeline.yml > build-pipeline.yml.tmp && mv build-pipeline.yml.tmp build-pipeline.yml
 # Override: allow_failure en dev porque las imágenes no existen hasta el primer
 # build en master (CHART-3 corre antes de build-trigger en el grafo del template).
 # El endurecimiento real ocurre en la rama promote/preprod-* vía
