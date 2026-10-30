@@ -79,8 +79,6 @@ analyze:
         shared && /^        - procesos-cpu-runner[ ]*$/ { n++; print "        - telconet-shared-docker-" n; next }
         { print }
       ' build-pipeline.yml > build-pipeline.yml.tmp && mv build-pipeline.yml.tmp build-pipeline.yml
-    - grep -c "telconet-shared-docker" build-pipeline.yml
-
 # Override: allow_failure en dev porque las imágenes no existen hasta el primer
 # build en master (CHART-3 corre antes de build-trigger en el grafo del template).
 # El endurecimiento real ocurre en la rama promote/preprod-* vía
