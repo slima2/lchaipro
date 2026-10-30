@@ -36,6 +36,14 @@ spec:
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
                 secretKeyRef: { name: lchai-secrets, key: RABBITMQ_PASSWORD }
+            {{- if eq (int .Values.rabbitmq.replicas) 1 }}
+            # La cookie de Erlang (~/.erlang.cookie) debe ser 0400/0600. En el volumen Lustre
+            # los permisos pueden quedar con bits de grupo (fsGroup/setgid/ACL) y RabbitMQ
+            # aborta con "Cookie file ... must be accessible by owner only". Con 1 réplica no
+            # hay clustering, así que la cookie va a un emptyDir (/tmp); los datos siguen en el PVC.
+            - name: HOME
+              value: /tmp
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
