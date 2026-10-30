@@ -22,97 +22,31 @@ logger = logging.getLogger(__name__)
 # Known entity IRIs for linking
 ENTITY_IRI_MAP: dict[str, dict] = {
     # Genes
-    "EGFR": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757",
-        "type": "gene",
-    },
-    "KRAS": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C25785",
-        "type": "gene",
-    },
-    "TP53": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359",
-        "type": "gene",
-    },
-    "ALK": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C20316",
-        "type": "gene",
-    },
-    "ROS1": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101480",
-        "type": "gene",
-    },
-    "BRAF": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C51549",
-        "type": "gene",
-    },
-    "MET": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17735",
-        "type": "gene",
-    },
-    "RET": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C52544",
-        "type": "gene",
-    },
-    "HER2": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C18449",
-        "type": "gene",
-    },
+    "EGFR": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17757", "type": "gene"},
+    "KRAS": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C25785", "type": "gene"},
+    "TP53": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359", "type": "gene"},
+    "ALK":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C20316", "type": "gene"},
+    "ROS1": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101480", "type": "gene"},
+    "BRAF": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C51549", "type": "gene"},
+    "MET":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17735", "type": "gene"},
+    "RET":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C52544", "type": "gene"},
+    "HER2": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C18449", "type": "gene"},
     # Patterns
-    "lepidic": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821",
-        "type": "pattern",
-    },
-    "acinar": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35922",
-        "type": "pattern",
-    },
-    "papillary": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911",
-        "type": "pattern",
-    },
-    "micropapillary": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181",
-        "type": "pattern",
-    },
-    "solid": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36182",
-        "type": "pattern",
-    },
-    "cribriform": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35920",
-        "type": "pattern",
-    },
+    "lepidic":       {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821", "type": "pattern"},
+    "acinar":        {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35922", "type": "pattern"},
+    "papillary":     {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911", "type": "pattern"},
+    "micropapillary": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181", "type": "pattern"},
+    "solid":         {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36182", "type": "pattern"},
+    "cribriform":    {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35920", "type": "pattern"},
     # Diagnoses
-    "adenocarcinoma": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852",
-        "type": "diagnosis",
-    },
-    "NSCLC": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2926",
-        "type": "diagnosis",
-    },
+    "adenocarcinoma": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852", "type": "diagnosis"},
+    "NSCLC":          {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2926", "type": "diagnosis"},
     # Drugs
-    "erlotinib": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C65530",
-        "type": "treatment",
-    },
-    "osimertinib": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C116377",
-        "type": "treatment",
-    },
-    "sotorasib": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C154287",
-        "type": "treatment",
-    },
-    "crizotinib": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C71610",
-        "type": "treatment",
-    },
-    "alectinib": {
-        "iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101790",
-        "type": "treatment",
-    },
+    "erlotinib":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C65530", "type": "treatment"},
+    "osimertinib": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C116377", "type": "treatment"},
+    "sotorasib":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C154287", "type": "treatment"},
+    "crizotinib": {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C71610", "type": "treatment"},
+    "alectinib":  {"iri": "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C101790", "type": "treatment"},
 }
 
 EXTRACT_SYSTEM_PROMPT = """You are a biomedical knowledge extraction system.
@@ -205,16 +139,14 @@ def entity_link(relations: list[dict]) -> list[dict]:
         subj_info = _find_entity(subj_name)
         obj_info = _find_entity(obj_name)
 
-        linked.append(
-            {
-                **rel,
-                "subject_iri": subj_info.get("iri") if subj_info else None,
-                "subject_type": subj_info.get("type") if subj_info else "unknown",
-                "object_iri": obj_info.get("iri") if obj_info else None,
-                "object_type": obj_info.get("type") if obj_info else "unknown",
-                "linked": bool(subj_info and obj_info),
-            }
-        )
+        linked.append({
+            **rel,
+            "subject_iri": subj_info.get("iri") if subj_info else None,
+            "subject_type": subj_info.get("type") if subj_info else "unknown",
+            "object_iri": obj_info.get("iri") if obj_info else None,
+            "object_type": obj_info.get("type") if obj_info else "unknown",
+            "linked": bool(subj_info and obj_info),
+        })
     return linked
 
 
@@ -240,7 +172,8 @@ def validate_relations(relations: list[dict]) -> dict:
         pred = rel.get("predicate", "")
         ot = rel.get("object_type", "")
         rule_match = any(
-            st == r[0] and pred == r[1] and ot == r[2] for r in VALIDATE_RULES
+            st == r[0] and pred == r[1] and ot == r[2]
+            for r in VALIDATE_RULES
         )
         if rule_match and rel.get("linked"):
             valid.append({**rel, "validation": "PASS"})
@@ -261,10 +194,8 @@ async def run_pipeline(
     """Run complete DeepSearch pipeline."""
     # Step 2: Extract
     raw_relations = await extract_relations_llm(
-        text,
-        llm_provider=llm_provider,
-        openai_api_key=openai_api_key,
-        anthropic_api_key=anthropic_api_key,
+        text, llm_provider=llm_provider,
+        openai_api_key=openai_api_key, anthropic_api_key=anthropic_api_key,
     )
     # Step 3: Link
     linked = entity_link(raw_relations)
@@ -285,7 +216,6 @@ async def run_pipeline(
 
 
 # ── Helpers ──
-
 
 def _find_entity(name: str) -> dict | None:
     name_lower = name.lower().strip()
@@ -331,21 +261,13 @@ def _mock_extract(text: str) -> list[dict]:
     ]
     for subj, obj, pred in pairs:
         if subj.lower() in text_lower or obj.lower() in text_lower:
-            relations.append(
-                {
-                    "subject": subj,
-                    "predicate": pred,
-                    "object": obj,
-                    "evidence_quote": f"Extracted from input text (mock): {subj} → {obj}",
-                }
-            )
+            relations.append({
+                "subject": subj, "predicate": pred, "object": obj,
+                "evidence_quote": f"Extracted from input text (mock): {subj} → {obj}",
+            })
     if not relations:
         relations = [
-            {
-                "subject": "solid pattern",
-                "predicate": "associatedWithMutation",
-                "object": "KRAS",
-                "evidence_quote": "Mock: solid pattern associated with KRAS mutations in LUAD",
-            },
+            {"subject": "solid pattern", "predicate": "associatedWithMutation", "object": "KRAS",
+             "evidence_quote": "Mock: solid pattern associated with KRAS mutations in LUAD"},
         ]
     return relations

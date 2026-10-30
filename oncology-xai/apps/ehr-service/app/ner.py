@@ -38,30 +38,12 @@ PATTERNS = {
 }
 
 DIAGNOSES = [
-    "adenocarcinoma",
-    "carcinoma",
-    "NSCLC",
-    "non-small cell",
-    "squamous cell",
-    "large cell",
-    "small cell",
-    "lung cancer",
-    "cáncer de pulmón",
+    "adenocarcinoma", "carcinoma", "NSCLC", "non-small cell",
+    "squamous cell", "large cell", "small cell",
+    "lung cancer", "cáncer de pulmón",
 ]
 
-STAGES = [
-    "stage I",
-    "stage II",
-    "stage III",
-    "stage IV",
-    "IA",
-    "IB",
-    "IIA",
-    "IIB",
-    "IIIA",
-    "IIIB",
-    "IV",
-]
+STAGES = ["stage I", "stage II", "stage III", "stage IV", "IA", "IB", "IIA", "IIB", "IIIA", "IIIB", "IV"]
 
 
 def extract_entities(text: str) -> list[ExtractedEntity]:
@@ -72,55 +54,35 @@ def extract_entities(text: str) -> list[ExtractedEntity]:
     for gene, keywords in MUTATIONS.items():
         for kw in keywords:
             for m in re.finditer(re.escape(kw), text, re.IGNORECASE):
-                entities.append(
-                    ExtractedEntity(
-                        text=m.group(),
-                        entity_type="MUTATION",
-                        start=m.start(),
-                        end=m.end(),
-                        confidence=0.95,
-                    )
-                )
+                entities.append(ExtractedEntity(
+                    text=m.group(), entity_type="MUTATION",
+                    start=m.start(), end=m.end(), confidence=0.95,
+                ))
 
     # Patterns
     for pattern, keywords in PATTERNS.items():
         for kw in keywords:
             for m in re.finditer(re.escape(kw), text, re.IGNORECASE):
-                entities.append(
-                    ExtractedEntity(
-                        text=m.group(),
-                        entity_type="PATTERN",
-                        start=m.start(),
-                        end=m.end(),
-                        confidence=0.90,
-                    )
-                )
+                entities.append(ExtractedEntity(
+                    text=m.group(), entity_type="PATTERN",
+                    start=m.start(), end=m.end(), confidence=0.90,
+                ))
 
     # Diagnoses
     for dx in DIAGNOSES:
         for m in re.finditer(re.escape(dx), text, re.IGNORECASE):
-            entities.append(
-                ExtractedEntity(
-                    text=m.group(),
-                    entity_type="DIAGNOSIS",
-                    start=m.start(),
-                    end=m.end(),
-                    confidence=0.85,
-                )
-            )
+            entities.append(ExtractedEntity(
+                text=m.group(), entity_type="DIAGNOSIS",
+                start=m.start(), end=m.end(), confidence=0.85,
+            ))
 
     # Stages
     for st in STAGES:
         for m in re.finditer(r"\b" + re.escape(st) + r"\b", text, re.IGNORECASE):
-            entities.append(
-                ExtractedEntity(
-                    text=m.group(),
-                    entity_type="STAGE",
-                    start=m.start(),
-                    end=m.end(),
-                    confidence=0.80,
-                )
-            )
+            entities.append(ExtractedEntity(
+                text=m.group(), entity_type="STAGE",
+                start=m.start(), end=m.end(), confidence=0.80,
+            ))
 
     # Deduplicate overlapping
     entities.sort(key=lambda e: (e.start, -e.end))
@@ -135,27 +97,15 @@ ONTOLOGY_MAP: dict[str, dict[str, tuple[str, str]]] = {
         "TP53": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C17359"),
     },
     "DIAGNOSIS": {
-        "adenocarcinoma": (
-            "NCIt",
-            "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852",
-        ),
+        "adenocarcinoma": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C2852"),
         "NSCLC": ("MONDO", "http://purl.obolibrary.org/obo/MONDO_0005233"),
         "lung cancer": ("MONDO", "http://purl.obolibrary.org/obo/MONDO_0008903"),
     },
     "PATTERN": {
-        "lepidic": (
-            "NCIt",
-            "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821",
-        ),
+        "lepidic": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C55821"),
         "acinar": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35922"),
-        "papillary": (
-            "NCIt",
-            "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911",
-        ),
-        "micropapillary": (
-            "NCIt",
-            "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181",
-        ),
+        "papillary": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C35911"),
+        "micropapillary": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36181"),
         "solid": ("NCIt", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C36182"),
     },
 }
@@ -169,14 +119,12 @@ def map_entity_to_ontology(entity: ExtractedEntity) -> list[dict]:
 
     for key, (onto, iri) in type_map.items():
         if key.lower() in text_lower or text_lower in key.lower():
-            mappings.append(
-                {
-                    "ontology": onto,
-                    "iri": iri,
-                    "label": key,
-                    "confidence": entity.confidence * 0.9,
-                    "mapping_method": "keyword_lookup",
-                }
-            )
+            mappings.append({
+                "ontology": onto,
+                "iri": iri,
+                "label": key,
+                "confidence": entity.confidence * 0.9,
+                "mapping_method": "keyword_lookup",
+            })
 
     return mappings

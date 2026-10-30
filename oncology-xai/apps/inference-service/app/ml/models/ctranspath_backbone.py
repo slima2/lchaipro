@@ -107,9 +107,9 @@ class CTransPathBackbone(nn.Module):
             )
 
     def _load_checkpoint(self, checkpoint_path: str):
-        checkpoint = torch.load(
-            checkpoint_path, map_location="cpu", weights_only=True
-        )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 
         if isinstance(checkpoint, dict):
             state_dict = checkpoint.get(
@@ -194,9 +194,9 @@ class CTransPathPipeline(nn.Module):
         cls, checkpoint_path: str, device: str = "cpu"
     ) -> CTransPathPipeline:
         """Load from best_fuzzyarcloss_v2.pth which has the finetuned backbone+projection."""
-        ck = torch.load(
-            checkpoint_path, map_location=device, weights_only=True
-        )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)
         config = ck.get("config", {})
         embed_dim = config.get("EMBED_DIM", 512)
         in_chans = 4 if config.get("USE_MASK_AS_CHANNEL", True) else 3
@@ -228,9 +228,9 @@ class CTransPathPipeline(nn.Module):
         checkpoint_path: str, device: str = "cpu"
     ) -> dict[str, Any]:
         """Load FuzzyArcLoss V2 classifier weights + config from checkpoint."""
-        ck = torch.load(
-            checkpoint_path, map_location=device, weights_only=True
-        )  # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch -- weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        ck = torch.load(checkpoint_path, map_location=device, weights_only=True)
         config = ck.get("config", {})
         loss_fn = ck.get("loss_fn", {})
         id2label = {
