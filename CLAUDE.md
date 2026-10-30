@@ -19,6 +19,7 @@ Project focused on explainable AI for oncology, combining a research-heavy thesi
     - `api-gateway/`: Entry point for the microservices ecosystem.
     - `ontology-admin-service/`: Literature and deep search for ontology management.
     - `webapp/`: Frontend interface.
+- `oncology-xai/infra/`: Infrastructure as Code (Helm charts for Kubernetes).
 
 ## Build & Test Commands
 
@@ -44,9 +45,13 @@ Each service in `oncology-xai/apps/` follows a similar pattern:
     - **Database**: SQL databases with Alembic for migrations.
     - **Gateway**: Centralized API Gateway for routing.
     - **Knowledge Graph**: Graph service utilizing SPARQL for medical ontology.
+    - **Frontend**: React-based webapp with runtime configuration via Nginx for environment-agnostic images.
+    - **Auth**: Keycloak integration (supporting both internal and external deployments).
+    - **Orchestration**: Kubernetes deployment via Helm.
 
 ## Conventions
 
 - **Environment**: Use `.env.example` in `oncology-xai/` as a template for local environment variables.
 - **Thesis Artifacts**: Training scripts are organized as "artefacts" (e.g., `artefact1_pattern_classifier`).
 - **Deployment**: Docker-based deployment with specific runners for large images (e.g., `inference-service` images > 3GB).
+- **Webapp Config**: The webapp uses a `/runtime-config.js` endpoint served by Nginx to inject environment-specific variables (Keycloak URL, Realm, etc.) at runtime.
