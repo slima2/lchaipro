@@ -89,6 +89,7 @@ spec:
                 name: lchai-config
             - secretRef:
                 name: lchai-secrets
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: inference-worker
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}

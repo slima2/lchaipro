@@ -16,6 +16,7 @@ spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.depPodContext" (dict "gid" 0) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image }}

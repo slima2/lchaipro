@@ -54,6 +54,7 @@ spec:
             - name: data
               mountPath: /var/lib/postgresql/data
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: postgres
           image: {{ $d.postgres.image }}
@@ -136,6 +137,7 @@ spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.depPodContext" (dict "gid" 1000) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: redis
           image: {{ $d.redis.image }}
@@ -206,6 +208,7 @@ spec:
       initContainers:
         {{- include "lchai.fixPermsInit" (dict "image" $d.s3.image "path" "/data" "volume" "data") | nindent 8 }}
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: seaweedfs
           image: {{ $d.s3.image }}
@@ -293,6 +296,7 @@ spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.depPodContext" (dict "gid" 1000) | nindent 6 }}
       restartPolicy: OnFailure
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: aws
           image: {{ $d.s3.awsCliImage }}
