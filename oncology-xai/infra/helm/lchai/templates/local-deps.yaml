@@ -37,7 +37,9 @@ spec:
       initContainers:
         - name: fix-permissions
           image: {{ $d.postgres.image }}
-          command: ["sh", "-c", "mkdir -p /var/lib/postgresql/data/pgdata && chmod a+rwx /var/lib/postgresql/data /var/lib/postgresql/data/pgdata"]
+          # NO crear pgdata aqui: si lo crea root, initdb (uid 70) no es dueno y falla en chmod 700.
+          # Solo se abre el padre para que initdb cree pgdata con su propio uid; un pgdata vacio huerfano de root se elimina.
+          command: ["sh", "-c", "chmod a+rwx /var/lib/postgresql/data; if [ -d /var/lib/postgresql/data/pgdata ] && [ ! -f /var/lib/postgresql/data/pgdata/PG_VERSION ]; then rmdir /var/lib/postgresql/data/pgdata 2>/dev/null || true; fi"]
           securityContext:
             runAsNonRoot: false
             runAsUser: 0
