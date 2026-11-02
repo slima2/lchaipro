@@ -1,7 +1,7 @@
 # Render de pre-prod para CI (ci-chart-scan: helm template + escaneo de imagenes y manifiestos).
 # Refleja fleet/stacks/txt/lchai (values-stack.yaml + envs/preprod/values.yaml). Sin secretos:
 # lchai-secrets y lchai-s3-config se crean fuera del chart (secrets.existing=true).
-domain: lchai-solca-pre.ai-dev.i.telconet.net
+domain: txt-solca-pre.ai-dev.i.telconet.net
 environment: production
 image:
   registry: registry.gitlab.telconet.ec
