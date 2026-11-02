@@ -60,6 +60,14 @@ NS=lchai SRC_PG_HOST=$HOST SRC_PG_PASSWORD="$CLAVE_COPIA" infra/migracion/migrar
 
 Detiene la app, vacía la base de destino, copia todo (`pg_dump` → `pg_restore`), completa el esquema con `init.sql` y vuelve a levantar la app. Debe mostrar el mismo número de pacientes en origen y destino. Tardó 1.5 min (el dump comprimido pesa ~350 KB).
 
+**Desde el respaldo del 1-nov-2026** (la RDS de producción ya no existe): en lugar de una RDS temporal, se restaura el volcado guardado en S3. Un initContainer lo baja con las credenciales de AWS (como en el paso 4) y PostgreSQL lo restaura:
+
+```bash
+NS=lchai SRC_DUMP=s3://lchai-respaldo-20261101-632100838024/db/oncology_xai-20261101.dump infra/migracion/migrar-datos.sh bd
+```
+
+Basta con credenciales de **solo lectura** del bucket de respaldo (ver «Credenciales de solo lectura» en el paso 4). Probado el 2-nov en minikube: 10 pacientes, sin errores.
+
 ## Paso 3. Keycloak
 
 ```bash
@@ -88,6 +96,33 @@ NS=lchai PREFIJOS="images/<case_id>/ results/<case_id>/" infra/migracion/migrar-
 - Copia carpeta por carpeta. El pod necesita disco temporal para la carpeta más grande; con el bucket completo, poner `PREFIJOS="images/ results/"`.
 - Si el S3 de destino no es el del cluster (servicio administrado de Telconet): `DEST_S3_ENDPOINT=https://...`.
 - Referencia: 716 MB en 2 min.
+
+**Desde el bucket de respaldo:** los archivos están en la carpeta `s3/lchai-prod-artifacts/` del respaldo. `SRC_PREFIX` lee desde ahí y escribe en la raíz del destino, así las rutas guardadas en la base (`s3://lchai-prod-artifacts/...`) siguen valiendo:
+
+```bash
+NS=lchai SRC_BUCKET=lchai-respaldo-20261101-632100838024 SRC_PREFIX=s3/lchai-prod-artifacts/ \
+  DEST_BUCKET=lchai-prod-artifacts infra/migracion/migrar-datos.sh s3
+```
+
+Modelos del worker (solo los 2 que usa, no los 4.8 GB de `backbones/`), con `INCLUIR`:
+
+```bash
+M="SRC_BUCKET=lchai-respaldo-20261101-632100838024 SRC_PREFIX=s3/lchai-prod-models/ DEST_BUCKET=lchai-prod-models"
+env NS=lchai $M PREFIJOS="backbones/" INCLUIR="ctranspath.pth best_fuzzyarcloss_v2.pth" infra/migracion/migrar-datos.sh s3
+env NS=lchai $M PREFIJOS="checkpoints/" INCLUIR="*.pth" infra/migracion/migrar-datos.sh s3   # 112 MB
+```
+
+**Credenciales de solo lectura** (recomendado: el respaldo no se puede modificar por error). Las crea quien tiene acceso a la cuenta de AWS y vencen solas:
+
+```bash
+cat > ro.json <<'JSON'
+{"Version":"2012-10-17","Statement":[
+ {"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::lchai-respaldo-20261101-632100838024/*"},
+ {"Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::lchai-respaldo-20261101-632100838024"}]}
+JSON
+aws sts get-federation-token --name migracion-lectura --duration-seconds 14400 --policy file://ro.json
+# exportar AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY y AWS_SESSION_TOKEN de la respuesta antes de correr el script
+```
 
 ## Paso 5. Verificar
 

@@ -164,8 +164,16 @@ spec:
           args:
             - server
             - -dir=/data
+            # Solo el gateway S3 (con la identidad de lchai) escucha fuera del pod. Master, volume y filer no
+            # piden credenciales: quedan en loopback. Iceberg (8181) y Lance (9101) no se usan: apagados.
+            - -ip=127.0.0.1
+            - -ip.bind=127.0.0.1
             - -s3
+            - -s3.ip.bind=0.0.0.0
             - -s3.port=8333
+            - -s3.port.iceberg=0
+            - -s3.port.lance=0
+            - -master.telemetry=false
             - -s3.config=/etc/seaweedfs/s3.json
             - -master.volumeSizeLimitMB=1024
             # Máximo de volúmenes lógicos (crecen según se usan); con el valor automático se agotaban
