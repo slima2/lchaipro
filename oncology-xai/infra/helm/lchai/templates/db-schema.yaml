@@ -1,5 +1,5 @@
 {{- /*
-Crea o completa el esquema de la base de datos con files/init.sql (idempotente: IF NOT EXISTS).
+Crea o completa el esquema de la base de datos con files/init.sql (idempotente: IF NOT EXISTS). Se recrea cuando cambia el SQL, la imagen o el destino.
 Los servicios no crean sus tablas ni corren Alembic al arrancar, así que sin esto una base nueva
 (PostgreSQL administrado o localDeps) queda incompleta. Corre en cada instalación o upgrade.
 */ -}}
@@ -15,8 +15,10 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  # Un nombre por revisión: no es un hook, para no bloquear helm --wait
-  name: {{ include "lchai.wl" (dict "root" $ "name" "db-schema") }}-{{ .Release.Revision }}
+  # No es un hook (no bloquea helm --wait). El sufijo es un hash del SQL, la imagen y el destino: el Job
+  # se recrea solo cuando cambia algo de eso. No usar .Release.Revision: bajo ArgoCD vale siempre 1 y un
+  # cambio de template falla con "spec.template: field is immutable".
+  name: {{ include "lchai.wl" (dict "root" $ "name" "db-schema") }}-{{ printf "%s|%s|%s|%s|%s" (.Files.Get "files/init.sql") .Values.dbSchema.image .Values.postgres.host .Values.postgres.database (.Values.postgres.sslMode | default "prefer") | sha256sum | trunc 8 }}
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 30

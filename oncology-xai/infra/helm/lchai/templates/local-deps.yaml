@@ -286,7 +286,9 @@ kind: Job
 metadata:
   # Recurso normal (no hook): el worker de inferencia necesita los buckets para arrancar, y un hook
   # post-install esperaría a que el worker esté listo (bloqueo mutuo con --wait).
-  name: {{ include "lchai.wl" (dict "root" $ "name" "s3-buckets") }}-{{ .Release.Revision }}
+  # El sufijo es un hash de lo que define el Job (origen CORS, buckets, imagen). No usar .Release.Revision:
+  # bajo ArgoCD vale siempre 1 y un cambio de template falla con "spec.template: field is immutable".
+  name: {{ include "lchai.wl" (dict "root" $ "name" "s3-buckets") }}-{{ printf "%s|%s|%s|%s|%s" (.Values.publicUrl | default (printf "https://%s" .Values.domain)) .Values.s3.bucket .Values.s3.modelsBucket $d.s3.awsCliImage (.Values.s3.region | toString) | sha256sum | trunc 8 }}
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 30

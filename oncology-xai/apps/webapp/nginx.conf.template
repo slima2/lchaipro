@@ -2,7 +2,7 @@
 # (/etc/nginx/templates -> /etc/nginx/conf.d). Solo se sustituyen variables de entorno definidas,
 # así que las variables propias de nginx ($uri, etc.) quedan intactas.
 #   CSP_S3_ORIGIN: origen del almacenamiento S3 al que el navegador sube y del que descarga (URL firmadas).
-#   (release 0.3.1: fix RabbitMQ cookie en el chart, sin cambios funcionales aquí)
+#   (release 0.3.2: Jobs del chart con nombre por hash, sin cambios funcionales aquí)
 #   CSP_KEYCLOAK_ORIGIN: origen de un Keycloak externo (vacío si Keycloak va detrás del mismo dominio).
 #   KEYCLOAK_URL / KEYCLOAK_REALM / KEYCLOAK_CLIENT_ID: configuración de login que la webapp lee en runtime
 #   desde /runtime-config.js (vacío = mismo dominio / valores por defecto de la compilación). El chart los
