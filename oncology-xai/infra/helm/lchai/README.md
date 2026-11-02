@@ -179,6 +179,8 @@ El worker los descarga del bucket `lchai-prod-models` al arrancar. Para copiarlo
 NS=lchai infra/minikube/minikube-up.sh modelos     # funciona con cualquier cluster, no solo minikube
 ```
 
+Si `lchai-prod-models` ya no existe, los modelos están en el bucket de respaldo del 1-nov-2026: ver «Modelos del worker» en el paso 4 de [infra/migracion/README.md](../../migracion/README.md).
+
 ## Paso 6. Usuarios
 
 - **Instalación nueva** (`keycloak.importRealm: true`): el realm llega sin usuarios. Crearlos en la consola de Keycloak con los roles `clinician`, `admin` o `auditor`:
