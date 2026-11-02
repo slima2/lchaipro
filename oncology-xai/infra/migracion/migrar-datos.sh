@@ -169,6 +169,9 @@ spec:
       args:
         - |
           set -e
+          # 4 transferencias a la vez (aws usa 10): con 10 láminas grandes en paralelo, SeaweedFS se quedaba sin memoria
+          export AWS_CONFIG_FILE=/data/.aws-config
+          printf '[default]\ns3 =\n  max_concurrent_requests = 4\n' > \$AWS_CONFIG_FILE
           for p in \${PREFIJOS:-""}; do
             echo "-> \${p:-bucket completo}"
             aws s3 sync "s3://$src_bucket/$src_prefix\$p" "/data/\$p" --only-show-errors $filtro

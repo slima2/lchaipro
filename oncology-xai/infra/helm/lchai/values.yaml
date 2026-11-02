@@ -154,6 +154,10 @@ localDeps:
     storage: 20Gi
     host: ""          # host público para las URL firmadas (ingress)
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
+    # Con 1Gi lo mataba el OOM al subir varias láminas grandes a la vez (migración completa, 2-nov-2026)
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { cpu: "1", memory: 3Gi }
 
 # Autenticación en el gateway
 auth:

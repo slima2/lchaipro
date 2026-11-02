@@ -195,8 +195,7 @@ spec:
             - name: config
               mountPath: /etc/seaweedfs
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits: { cpu: "1", memory: 1Gi }
+            {{- toYaml $d.s3.resources | nindent 12 }}
       volumes:
         - name: config
           secret:
