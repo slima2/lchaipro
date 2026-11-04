@@ -71,6 +71,9 @@ s3:
   modelsBucket: lchai-prod-models
   # Vacío = AWS S3. Para MinIO/Ceph: URL del endpoint (debe ser accesible por el navegador)
   endpoint: ""
+  # Endpoint interno (servicio->S3 dentro del cluster). Vacío = con localDeps.enabled usa http://s3:8333;
+  # sin localDeps usa s3.endpoint. S3_ENDPOINT_EXTERNAL siempre queda con la URL pública.
+  internalEndpoint: ""
 
 acmCertificateArn: "arn:aws:acm:us-east-1:632100838024:certificate/0b8be42a-de6d-4296-ad66-7ded2bf1c263"
 
