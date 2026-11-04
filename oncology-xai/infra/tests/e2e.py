@@ -35,7 +35,8 @@ def check(name, cond, extra=""):
 
 
 def token(u, p):
-    return login(B, u, p)
+    # Con Keycloak externo (keycloak.external) el login va a otro dominio: LCHAI_KEYCLOAK_URL=https://keycloak...
+    return login(B, u, p, kc_base=os.environ.get("LCHAI_KEYCLOAK_URL") or None)
 
 
 def h(t):

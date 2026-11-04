@@ -88,7 +88,7 @@ keycloak:
     url: ""            # p. ej. https://keycloak.ai-dev.i.telconet.net (sin "/" final)
   # Obligatoria: pasarla con --set keycloak.adminPassword=... (nunca en el repo)
   adminPassword: ""
-  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/keycloak:26.8.1-r1
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/keycloak:26.8.1-r2
   # Modo producción detrás del ingress (TLS termina en el ingress; X-Forwarded-* vía KC_PROXY_HEADERS).
   # --optimized: la imagen ya trae el build (postgres + health), no reaugmenta al arrancar.
   args: ["start", "--optimized", "--http-enabled=true", "--hostname-strict=false"]
@@ -108,7 +108,7 @@ rabbitmq:
   storage: 5Gi
 
 fuseki:
-  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/fuseki:6.2.0-r1   # Jena Fuseki 6.2.0
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/fuseki:6.2.0-r2   # Jena Fuseki 6.2.0
   adminPassword: ""     # obligatoria (--set)
   storage: 10Gi
 
@@ -182,6 +182,10 @@ localDeps:
     storage: 20Gi
     host: ""          # host público para las URL firmadas (ingress)
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
+    # Con 1Gi lo mataba el OOM al subir varias láminas grandes a la vez (migración completa, 2-nov-2026)
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { cpu: "1", memory: 3Gi }
 
 # Autenticación en el gateway
 # Nombres de Deployment/StatefulSet/Job: <workloadPrefix>-<componente>-<workloadSuffix>

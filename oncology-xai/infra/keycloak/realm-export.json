@@ -49,12 +49,7 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "defaultClientScopes": [
-        "openid",
-        "profile",
-        "email",
-        "roles"
-      ],
+      "defaultClientScopes": ["basic", "web-origins", "acr", "profile", "email", "roles"],
       "optionalClientScopes": [
         "offline_access"
       ],
