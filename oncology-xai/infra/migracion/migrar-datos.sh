@@ -28,6 +28,8 @@ AWS_IMAGE="${AWS_IMAGE:-amazon/aws-cli:2.17.0}"
 k() { kubectl -n "$NS" "$@"; }
 log() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
 cfg() { k get configmap lchai-config -o jsonpath="{.data.$1}"; }
+# Deployment de Keycloak por su selector (con workloadPrefix/Suffix el nombre cambia)
+kc_deploy() { k get deploy -o jsonpath='{range .items[?(@.spec.selector.matchLabels.app=="keycloak")]}{.metadata.name}{end}'; }
 
 # Corre un pod hasta que termina, muestra su log y lo borra. $1 = nombre, stdin = manifiesto
 run_pod() {
@@ -139,7 +141,7 @@ EOF
 
   log "Levantando la app otra vez"
   for r in $replicas; do k scale deploy "${r%%=*}" --replicas="${r##*=}" >/dev/null; done
-  k rollout status deploy/keycloak --timeout=600s
+  [[ -n "$(kc_deploy)" ]] && k rollout status "deploy/$(kc_deploy)" --timeout=600s
   echo "Siguiente: PUBLIC_URL=https://<domain> $0 keycloak"
 }
 
@@ -214,7 +216,7 @@ PY
   k exec -i "$(k get pod -l app=postgres -o name | head -1)" -- \
     psql -U "$(cfg POSTGRES_USER)" -d "$(cfg POSTGRES_DB)" -c "$sql" 2>/dev/null \
     || { echo "PostgreSQL no está en el cluster: correr este UPDATE en la base administrada:"; echo "$sql"; }
-  k rollout restart deploy/keycloak >/dev/null && k rollout status deploy/keycloak --timeout=600s
+  k rollout restart "deploy/$(kc_deploy)" >/dev/null && k rollout status "deploy/$(kc_deploy)" --timeout=600s
 
   log "Endureciendo el realm y registrando $PUBLIC_URL"
   NS="$NS" PUBLIC_URL="$PUBLIC_URL" "$HERE/../keycloak/harden-realm.sh"

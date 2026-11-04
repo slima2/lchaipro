@@ -15,12 +15,14 @@ La producción de AWS se dio de baja el 1-nov-2026. Antes se respaldó todo en e
 
 En total, unos 15 minutos, más los modelos (paso 5).
 
+**Repetido el 4-nov-2026 con el merge del código de Gabo** (`gabo/master` v0.3.2 con correcciones del pentest; imágenes de dependencias `deps/*` de su registro y Keycloak 26 **externo**, como en Telconet): base en 3 min, 555 archivos en 10.5 min, 43 usuarios exportados e importados en el Keycloak externo, modelos (152) y `e2e.py` **26/26** con usuarios migrados. Caso 860eedbd igual que en producción.
+
 ## Qué se migra
 
 | Dato | Dónde está en el respaldo | Cómo se migra |
 |---|---|---|
 | Pacientes, casos, resultados y auditoría | `db/oncology_xai-20261101.dump` (PostgreSQL 16, 344 KB) | paso 2 (`bd`) |
-| **Usuarios y contraseñas** (Keycloak) | el mismo volcado (Keycloak comparte la base) | llegan con el paso 2; cada usuario entra con su misma clave |
+| **Usuarios y contraseñas** (Keycloak) | el mismo volcado (tablas de Keycloak dentro de la base) | Keycloak propio: llegan con el paso 2. **Keycloak del cluster:** se exportan e importan (paso 3). En los dos casos cada usuario entra con su misma clave |
 | Láminas y resultados (imágenes y mapas) | `s3/lchai-prod-artifacts/` (`images/` 4.2 GB, `results/` 1.7 GB) | paso 4 (`s3`) |
 | Modelos de IA | `s3/lchai-prod-models/` (5 GB; se usan 330 MB) | paso 5 |
 | Ontología (Fuseki) | — | no se migra: se regenera |
@@ -38,6 +40,10 @@ En total, unos 15 minutos, más los modelos (paso 5).
 - `kubectl` apuntando al cluster de destino, más `aws` (CLI v2) y `python3` en la máquina desde donde se corre el script.
 - **El cluster necesita salida a internet hacia S3 de AWS** (`s3.us-east-1.amazonaws.com`, puerto 443): los pods descargan de ahí.
 - **La migración reemplaza toda la base de destino.** Está pensada para un lchai recién instalado: se pierde lo que se haya creado ahí, como usuarios o casos de prueba.
+- **Con ArgoCD (preprod de Telconet): pausar la sincronización automática de la app** durante el paso 2, y reactivarla al terminar. El paso 2 apaga los Deployments mientras restaura la base; con *self-heal*, ArgoCD los volvería a encender a mitad de la copia.
+- Los pods temporales del script usan `postgres:16-alpine` y `amazon/aws-cli` de Docker Hub. Si el cluster no llega a Docker Hub, usar las del registro de dependencias:
+  `export PG_IMAGE=registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/postgres:16.15-r1 AWS_IMAGE=registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/aws-cli:2.39.2`
+- Los nombres con prefijo (`workloadPrefix`/`workloadSuffix`, p. ej. `txt-solca-lchai-keycloak-pre`) no afectan: el script busca cada componente por su etiqueta `app`. Con `keycloak.external` el paso 3 se hace en el Keycloak del cluster ([KEYCLOAK-EXTERNO.md](../keycloak/KEYCLOAK-EXTERNO.md)).
 - Disco: unos 6 GB en el volumen de S3 del cluster (`localDeps.s3.storage`; `values-telconet.yaml` pide 100Gi). El pod que copia los archivos usa un disco temporal (`emptyDir`) de hasta 4.2 GB, el tamaño de `images/`, y lo libera al terminar.
 
 ## Paso 1. Credenciales de solo lectura
@@ -84,7 +90,11 @@ NS=lchai SRC_DUMP=s3://lchai-respaldo-20261101-632100838024/db/oncology_xai-2026
 
 Debe terminar mostrando `destino: 10 pacientes`.
 
-## Paso 3. Keycloak (1.5 min)
+## Paso 3. Keycloak
+
+**Con el Keycloak del cluster (`keycloak.external`, el caso de Telconet):** seguir [infra/keycloak/KEYCLOAK-EXTERNO.md](../keycloak/KEYCLOAK-EXTERNO.md). Ahí se crea el realm en ese Keycloak, se exportan los usuarios de la base restaurada en el paso 2 con `infra/keycloak/exportar-usuarios.sh` y se importan con *Partial import*. Probado el 4-nov-2026: 43 usuarios importados, entran con su clave y e2e 26/26. El comando de abajo no aplica en este caso.
+
+**Con un Keycloak propio desplegado por el chart (1.5 min):**
 
 ```bash
 NS=lchai PUBLIC_URL=https://<domain> infra/migracion/migrar-datos.sh keycloak
@@ -141,7 +151,7 @@ Debe terminar con `objetos en destino: 152`. Probado el 2-nov-2026 en minikube: 
 
 ### GPU (recomendado)
 
-El worker usa la GPU si la encuentra y, si no, pasa solo a CPU. Los resultados son **idénticos**; lo que cambia es el tiempo. Medido el 2-nov-2026 con la misma imagen que va a Telconet:
+El worker usa la GPU si la encuentra y, si no, pasa solo a CPU. Los resultados son **idénticos**; lo que cambia es el tiempo. Medido el 2-nov-2026 y repetido el 4-nov-2026 con la imagen `inference-service` del merge (EC2 g4dn.xlarge temporal, torch 2.6.0+cu124). En la lámina chica, la GPU y la CPU dieron exactamente los mismos patrones y genes:
 
 | | Lámina completa de prueba (383 cuadros) |
 |---|---|

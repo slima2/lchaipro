@@ -55,3 +55,39 @@ Each service in `oncology-xai/apps/` follows a similar pattern:
 - **Thesis Artifacts**: Training scripts are organized as "artefacts" (e.g., `artefact1_pattern_classifier`).
 - **Deployment**: Docker-based deployment with specific runners for large images (e.g., `inference-service` images > 3GB).
 - **Webapp Config**: The webapp uses a `/runtime-config.js` endpoint served by Nginx to inject environment-specific variables (Keycloak URL, Realm, etc.) at runtime.
+
+## Despliegue y migración desde el respaldo de AWS (para agentes)
+
+Resumen para humanos: [MIGRACION-AWS.md](MIGRACION-AWS.md). Guías detalladas:
+- Despliegue con el chart: `oncology-xai/infra/helm/lchai/README.md`.
+- Migración de datos: `oncology-xai/infra/migracion/README.md` (script `migrar-datos.sh`: `bd`, `keycloak`, `s3`, `verificar`).
+- Keycloak del cluster: `oncology-xai/infra/keycloak/KEYCLOAK-EXTERNO.md`.
+
+**Origen de los datos.** La producción de AWS se dio de baja el 1-nov-2026. Todo está en el bucket `lchai-respaldo-20261101-632100838024` (cuenta 632100838024, `us-east-1`):
+- `db/oncology_xai-20261101.dump`: base, más las tablas de Keycloak con 43 usuarios;
+- `s3/lchai-prod-artifacts/`: 555 archivos, 5.9 GB;
+- `s3/lchai-prod-models/`: se usan 2 backbones y 150 checkpoints.
+
+Reglas del respaldo: **solo lectura**, con credenciales temporales de `sts get-federation-token` limitadas a Get/List de ese bucket. Nunca escribir en él ni guardar credenciales en el repo.
+
+**Keycloak: dos modos.**
+- **Del cluster** (`keycloak.external.enabled: true`, `keycloak.external.url`). Es el caso de Telconet. Los pasos:
+  1. crear el realm con `infra/keycloak/preparar-realm.sh https://<dominio> > oncology-realm.json`;
+  2. restaurar la base con `migrar-datos.sh bd`;
+  3. exportar los usuarios con `infra/keycloak/exportar-usuarios.sh usuarios.json` e importarlos con *Partial import*.
+
+  El paso `migrar-datos.sh keycloak` **no** aplica en este modo.
+- **Propio del chart** (`keycloak.external.enabled: false`). Los usuarios llegan con `migrar-datos.sh bd`. Después corre `PUBLIC_URL=https://<dominio> migrar-datos.sh keycloak`, que cambia la clave del admin, endurece el realm y registra el dominio.
+
+**Errores conocidos, ya resueltos (no repetirlos):**
+- Keycloak 25+ necesita el client scope `basic` en `oncology-webapp`; sin él, los tokens salen sin `sub` y la API responde 401 `Token validation failed: 'sub'`. Ya está en `realm-export.json`.
+- `kc.sh export` necesita `--users same_file` y `KC_SPI_CONNECTIONS_JPA__QUARKUS__MIGRATION_STRATEGY=update`, porque la base viene de Keycloak 23.
+- La imagen de Keycloak no trae `tar`: para pasarle archivos usar `kubectl exec -i ... -f - < archivo`, no `kubectl cp`.
+- SeaweedFS necesita 3Gi de memoria (`localDeps.s3.resources`) para la migración completa; con 1Gi lo mata el OOM.
+- Con ArgoCD hay que pausar el auto-sync durante `migrar-datos.sh bd`, porque apaga los Deployments mientras restaura.
+- Los scripts buscan los componentes por la etiqueta `app` (sirven con `workloadPrefix`/`workloadSuffix`). Las imágenes de los pods temporales se cambian con `PG_IMAGE` y `AWS_IMAGE` (`deps/*`).
+- Los servicios exigen `POSTGRES_DSN`, `POSTGRES_DSN_SYNC` y `RABBITMQ_URL`, sin valores por defecto: no hay que quitarlo, es una corrección de seguridad.
+
+**Verificación:** `migrar-datos.sh verificar` debe dar 10 pacientes, 7 casos, 7 imágenes y 19 resultados. Después `infra/tests/e2e.py` (con `LCHAI_KEYCLOAK_URL` si Keycloak está en otro dominio) debe dar 0 fallas. Probado el 4-nov-2026: 26/26.
+
+**GPU:** el worker usa CUDA si la hay y si no pasa a CPU, con el mismo resultado. Necesita `inferenceWorker.gpu: true`, el NVIDIA device plugin y `updateStrategy: Recreate`. Detalles en el paso 5 de la guía de migración.
