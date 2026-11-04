@@ -80,6 +80,41 @@ Notas sobre los usuarios:
 - Producción conserva los usuarios de demo `admin1`, `clinician1` y `auditor1`. En el repo original su clave era igual al nombre. Conviene deshabilitarlos o cambiarles la clave después de importar.
 - La política de claves nueva no afecta las claves importadas. Se aplica cuando cada usuario cambia la suya.
 
+### 2b. Keycloak compartido, con otro realm (Telconet)
+
+Si el Keycloak es compartido con otras aplicaciones y lchai usa un realm que ya existe, el *Partial import* no sirve. En ese caso se usa `crear-usuarios.py`, que crea los usuarios **por la API de administración**:
+- no toca la base de Keycloak;
+- no importa el realm;
+- solo necesita una cuenta con permiso para gestionar usuarios en ese realm.
+
+Cada usuario se crea con su hash de AWS, así que **entra con su misma clave**.
+
+1. Exportar los usuarios con `exportar-usuarios.sh` (como arriba).
+2. Dar permisos. En el realm de destino, crear un cliente confidencial (por ejemplo `lchai-migrador`) con *Service accounts* activado y, en *Service account roles*, los roles `manage-users` y `view-clients` de `realm-management`. También sirve un administrador (`KC_ADMIN_USER`/`KC_ADMIN_PASS`, con `KC_AUTH_REALM=master` si es el global).
+3. Crear los roles de lchai, `clinician`, `admin` y `auditor`, de una de dos formas:
+   - como roles del realm (`ROLES=realm`);
+   - como roles del cliente `oncology-api` (`ROLES=cliente`), para no agregar roles globales a un realm compartido. El gateway acepta las dos formas.
+4. Probar sin cambiar nada (`SIMULAR=1`) y después crear:
+   ```bash
+   KC_URL=https://<keycloak> REALM=<realm> KC_CLIENT_ID=lchai-migrador KC_CLIENT_SECRET=<secreto> ROLES=cliente \
+     SIMULAR=1 python3 infra/keycloak/crear-usuarios.py oncology-usuarios.json
+   KC_URL=https://<keycloak> REALM=<realm> KC_CLIENT_ID=lchai-migrador KC_CLIENT_SECRET=<secreto> ROLES=cliente \
+     python3 infra/keycloak/crear-usuarios.py oncology-usuarios.json
+   ```
+5. Borrar `oncology-usuarios.json` y el cliente `lchai-migrador`, o quitarle los permisos.
+
+El script:
+- **Omite** los usuarios de demo (`admin1`, `clinician1`, `auditor1`; se cambia con `EXCLUIR`) y los que no tienen ningún rol de lchai.
+- **No toca** a los usuarios que ya existen. Con `EXISTENTES=clave` les reemplaza la clave por la de AWS y les asigna el rol: sirve para pasar de pre-producción, donde los usuarios se crearon con claves de prueba, a producción.
+- **Se puede correr varias veces.** Una segunda corrida no crea nada repetido.
+- **No modifica** a los usuarios de otras aplicaciones del realm.
+
+Probado el 4-nov-2026 con Keycloak 26.8.1 (`deps/keycloak:26.8.1-r1`) y usuarios ficticios con hash pbkdf2-sha256, como los de AWS:
+- realm de destino con otro nombre, con roles del cliente `oncology-api` y cuenta de servicio, y otro realm con roles del realm y el admin global;
+- los usuarios entraron con su clave original y una clave equivocada fue rechazada;
+- un usuario de pre-producción con clave `123456789` pasó a la de AWS con `EXISTENTES=clave`, y la clave vieja dejó de funcionar;
+- el usuario de otra aplicación quedó sin cambios.
+
 ## 3. lchai apuntando al Keycloak del cluster
 
 En los values del entorno:

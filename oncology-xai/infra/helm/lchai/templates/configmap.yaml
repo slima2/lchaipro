@@ -9,10 +9,16 @@ data:
   POSTGRES_DB: {{ .Values.postgres.database | quote }}
   POSTGRES_USER: {{ .Values.postgres.username | quote }}
   {{- $s3 := include "lchai.s3Endpoint" . }}
-  S3_ENDPOINT: {{ $s3 | default (printf "https://s3.%s.amazonaws.com" .Values.s3.region) | quote }}
-  {{- with $s3 }}
+  {{- /* Endpoint para tráfico servicio->S3 dentro del cluster. Con SeaweedFS local (localDeps) los pods no
+         siempre alcanzan la URL pública (hairpin por el gateway), así que se usa el Service interno. */}}
+  {{- $s3Internal := .Values.s3.internalEndpoint | default (ternary "http://s3:8333" "" (and .Values.localDeps.enabled (not (empty $s3)))) }}
+  S3_ENDPOINT: {{ $s3Internal | default $s3 | default (printf "https://s3.%s.amazonaws.com" .Values.s3.region) | quote }}
+  {{- with ($s3Internal | default $s3) }}
   S3_ENDPOINT_URL: {{ . | quote }}
+  {{- end }}
+  {{- with $s3 }}
   # image-service reescribe el host de las URL firmadas con este valor (por defecto http://localhost:9000)
+  # Debe ser la URL pública: es la que usa el navegador.
   S3_ENDPOINT_EXTERNAL: {{ . | quote }}
   {{- end }}
   S3_BUCKET: {{ .Values.s3.bucket | quote }}
