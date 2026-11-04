@@ -53,7 +53,8 @@ Guía detallada: **[`oncology-xai/infra/migracion/README.md`](oncology-xai/infra
    Después, reactivar el auto-sync.
 4. **Keycloak del cluster**, según [`infra/keycloak/KEYCLOAK-EXTERNO.md`](oncology-xai/infra/keycloak/KEYCLOAK-EXTERNO.md):
    - crear el realm con `preparar-realm.sh https://<dominio>`;
-   - exportar los usuarios con `exportar-usuarios.sh` e importarlos con *Partial import*.
+   - exportar los usuarios con `exportar-usuarios.sh` e importarlos con *Partial import*;
+   - **si el Keycloak es compartido y el realm es otro:** crearlos con `crear-usuarios.py` por la API de administración. Cada usuario entra con su misma clave de AWS (sección 2b de la guía). En pre-producción se pueden crear a mano con claves de prueba y pasarlos después a la clave de AWS con `EXISTENTES=clave`.
 5. **Archivos:**
    ```bash
    NS=<ns> SRC_BUCKET=lchai-respaldo-20261101-632100838024 SRC_PREFIX=s3/lchai-prod-artifacts/ \

@@ -75,6 +75,7 @@ Reglas del respaldo: **solo lectura**, con credenciales temporales de `sts get-f
   1. crear el realm con `infra/keycloak/preparar-realm.sh https://<dominio> > oncology-realm.json`;
   2. restaurar la base con `migrar-datos.sh bd`;
   3. exportar los usuarios con `infra/keycloak/exportar-usuarios.sh usuarios.json` e importarlos con *Partial import*.
+     Si el Keycloak es **compartido y el realm ya existe** (Telconet), no se importa: `infra/keycloak/crear-usuarios.py` los crea por la API de admin con su hash de AWS (`ROLES=realm|cliente`, `EXISTENTES=omitir|clave`, `SIMULAR=1`). Ver la sección 2b de `KEYCLOAK-EXTERNO.md`.
 
   El paso `migrar-datos.sh keycloak` **no** aplica en este modo.
 - **Propio del chart** (`keycloak.external.enabled: false`). Los usuarios llegan con `migrar-datos.sh bd`. Después corre `PUBLIC_URL=https://<dominio> migrar-datos.sh keycloak`, que cambia la clave del admin, endurece el realm y registra el dominio.
