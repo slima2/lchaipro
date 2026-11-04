@@ -11,6 +11,7 @@ from oncology_common.models.base import BaseModel
 
 # ── Enums ──────────────────────────────────────────────────────────────
 
+
 class CaseStatus(str, Enum):
     CREATED = "CREATED"
     READY = "READY"
@@ -78,6 +79,7 @@ class ProposalStatus(str, Enum):
 
 # ── Patient ────────────────────────────────────────────────────────────
 
+
 class PatientCreate(BaseModel):
     external_id: str | None = None
     demographics: dict[str, Any] = Field(default_factory=dict)
@@ -92,6 +94,7 @@ class Patient(BaseModel):
 
 
 # ── Case ───────────────────────────────────────────────────────────────
+
 
 class CaseCreate(BaseModel):
     patient_id: UUID
@@ -118,6 +121,7 @@ class CaseUpdate(BaseModel):
 
 # ── Image ──────────────────────────────────────────────────────────────
 
+
 class ImageUploadMeta(BaseModel):
     format: ImageFormat = ImageFormat.PNG
     stain: str | None = None
@@ -141,6 +145,7 @@ class ImageEntity(BaseModel):
 
 # ── ML Job ─────────────────────────────────────────────────────────────
 
+
 class MLJobEntity(BaseModel):
     job_id: UUID
     case_id: UUID | None = None
@@ -156,6 +161,7 @@ class MLJobEntity(BaseModel):
 
 
 # ── Pattern / Genetic results ──────────────────────────────────────────
+
 
 class PatternResult(BaseModel):
     pattern: PatternType
@@ -216,9 +222,14 @@ class ProcessImageRequest(BaseModel):
     model_profile: str = "ctranspath_fuzzyarcloss_v3"
     thresholds: dict[str, float] = Field(
         default_factory=lambda: {
-            "lepidic": 0.55, "acinar": 0.55, "papillary": 0.55,
-            "micropapillary": 0.55, "solid": 0.55,
-            "EGFR": 0.60, "KRAS": 0.60, "TP53": 0.60,
+            "lepidic": 0.55,
+            "acinar": 0.55,
+            "papillary": 0.55,
+            "micropapillary": 0.55,
+            "solid": 0.55,
+            "EGFR": 0.60,
+            "KRAS": 0.60,
+            "TP53": 0.60,
         }
     )
     roi: dict[str, Any] | None = None
@@ -244,6 +255,7 @@ class ResultBundle(BaseModel):
 
 
 # ── EHR ────────────────────────────────────────────────────────────────
+
 
 class EHRIngestRequest(BaseModel):
     source: str = "paste"
@@ -286,6 +298,7 @@ class EHRMapping(BaseModel):
 
 # ── Graph ──────────────────────────────────────────────────────────────
 
+
 class GraphNode(BaseModel):
     id: str
     label: str
@@ -315,6 +328,7 @@ class GraphSnapshot(BaseModel):
 
 # ── Explanation ────────────────────────────────────────────────────────
 
+
 class ExplanationReport(BaseModel):
     report_id: UUID
     case_id: UUID
@@ -329,6 +343,7 @@ class ExplanationReport(BaseModel):
 
 
 # ── Ontology ───────────────────────────────────────────────────────────
+
 
 class OntologyVersion(BaseModel):
     ontology_version_id: UUID
@@ -355,6 +370,7 @@ class UpdateProposal(BaseModel):
 
 
 # ── Audit ──────────────────────────────────────────────────────────────
+
 
 class AuditEvent(BaseModel):
     event_id: UUID

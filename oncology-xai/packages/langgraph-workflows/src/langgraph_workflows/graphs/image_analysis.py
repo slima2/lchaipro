@@ -37,12 +37,18 @@ MUTATION_THRESHOLD = 0.5
 
 async def validate_input(state: GraphState) -> GraphState:
     """Validate that required inputs are present."""
-    state = update_exec(state, status="running", progress=0.0, current_node="validate_input")
+    state = update_exec(
+        state, status="running", progress=0.0, current_node="validate_input"
+    )
     inputs = state.get("inputs", {})
 
     if not inputs.get("image_id") and not inputs.get("image_uri"):
         state = update_exec(
-            state, error={"code": "VALIDATION_ERROR", "message": "image_id or image_uri required"}
+            state,
+            error={
+                "code": "VALIDATION_ERROR",
+                "message": "image_id or image_uri required",
+            },
         )
         state["execution"]["status"] = "failed"
         return state
@@ -50,7 +56,11 @@ async def validate_input(state: GraphState) -> GraphState:
     ctx = state.get("context", {})
     if not ctx.get("case_id"):
         state = update_exec(
-            state, error={"code": "VALIDATION_ERROR", "message": "case_id is required in context"}
+            state,
+            error={
+                "code": "VALIDATION_ERROR",
+                "message": "case_id is required in context",
+            },
         )
         state["execution"]["status"] = "failed"
 
@@ -104,7 +114,6 @@ async def run_ctranspath_embedding(state: GraphState) -> GraphState:
     inter = dict(state.get("_intermediate", {}))
 
     image_bytes = state.get("_image_bytes", b"")
-    model_client = get_model_client()
 
     # The embedding extraction is handled internally by the pattern prediction
     # Store embedding dimension for downstream use
@@ -117,7 +126,9 @@ async def run_ctranspath_embedding(state: GraphState) -> GraphState:
 
 async def run_fuzzyarcloss_v3(state: GraphState) -> GraphState:
     """Run FuzzyArcLoss v3 SubCenters for pattern classification."""
-    state = update_exec(state, progress=0.40, current_node="run_fuzzyarcloss_v3_subcenters")
+    state = update_exec(
+        state, progress=0.40, current_node="run_fuzzyarcloss_v3_subcenters"
+    )
     model_client = get_model_client()
 
     image_bytes = state.get("_image_bytes", b"")
@@ -145,7 +156,9 @@ async def compute_pattern_composition(state: GraphState) -> GraphState:
     Normalises percentages so they sum to 100% and determines
     the predominant pattern.
     """
-    state = update_exec(state, progress=0.50, current_node="compute_pattern_composition")
+    state = update_exec(
+        state, progress=0.50, current_node="compute_pattern_composition"
+    )
     outputs = dict(state.get("outputs", {}))
     patterns = outputs.get("pattern_outputs", [])
 
@@ -206,7 +219,9 @@ async def run_mutation_models(state: GraphState) -> GraphState:
     except Exception as exc:
         logger.error("Mutation prediction failed: %s", exc)
         genetic_outputs = model_client._mock_mutations()
-        state = update_exec(state, error={"code": "MUTATION_ERROR", "message": str(exc)})
+        state = update_exec(
+            state, error={"code": "MUTATION_ERROR", "message": str(exc)}
+        )
 
     # Apply threshold classification
     for g in genetic_outputs:
@@ -245,7 +260,9 @@ async def compute_shap_global(state: GraphState) -> GraphState:
         state = update_exec(state, error={"code": "SHAP_ERROR", "message": str(exc)})
 
     # Keep only global artifacts (bar + beeswarm)
-    global_artifacts = [a for a in shap_artifacts if a["artifact_type"] in ("shap_bar", "shap_beeswarm")]
+    global_artifacts = [
+        a for a in shap_artifacts if a["artifact_type"] in ("shap_bar", "shap_beeswarm")
+    ]
     inter["shap_global_artifacts"] = global_artifacts
 
     # Keep force plot artifacts separately
@@ -286,7 +303,9 @@ async def assemble_result_bundle(state: GraphState) -> GraphState:
     outputs["result_bundle_id"] = bundle_id
 
     # Add XAI artifacts from SHAP
-    shap_all = inter.get("shap_global_artifacts", []) + inter.get("shap_force_artifacts", [])
+    shap_all = inter.get("shap_global_artifacts", []) + inter.get(
+        "shap_force_artifacts", []
+    )
     existing_xai = outputs.get("xai_artifacts", [])
     # Deduplicate
     seen_uris = {a.get("uri") for a in existing_xai}
@@ -327,20 +346,24 @@ async def policy_check(state: GraphState) -> GraphState:
     # Check pattern conclusiveness
     for p in outputs.get("pattern_outputs", []):
         if not p.get("is_conclusive", True):
-            flags.append({
-                "type": "LOW_CONFIDENCE_PATTERN",
-                "pattern": p["pattern"],
-                "score": str(p.get("score", 0)),
-            })
+            flags.append(
+                {
+                    "type": "LOW_CONFIDENCE_PATTERN",
+                    "pattern": p["pattern"],
+                    "score": str(p.get("score", 0)),
+                }
+            )
 
     # Check inconclusive mutations
     for g in outputs.get("genetic_outputs", []):
         if g.get("status") == "INCONCLUSIVE":
-            flags.append({
-                "type": "INCONCLUSIVE_MUTATION",
-                "mutation": g["mutation"],
-                "score": str(g.get("score", 0)),
-            })
+            flags.append(
+                {
+                    "type": "INCONCLUSIVE_MUTATION",
+                    "mutation": g["mutation"],
+                    "score": str(g.get("score", 0)),
+                }
+            )
 
     inter["policy_flags"] = flags
     if flags:
@@ -367,11 +390,14 @@ async def persist_and_audit(state: GraphState) -> GraphState:
 
     # Persist pattern composition as JSON
     import json
+
     composition = inter.get("pattern_composition", {})
     if composition:
         comp_json = json.dumps(composition, indent=2).encode("utf-8")
         comp_uri = storage.upload_file(
-            f"results/{bundle_id}/pattern_composition.json", comp_json, "application/json"
+            f"results/{bundle_id}/pattern_composition.json",
+            comp_json,
+            "application/json",
         )
         logger.info("Persisted pattern composition to %s", comp_uri)
 
@@ -380,7 +406,9 @@ async def persist_and_audit(state: GraphState) -> GraphState:
     if profile:
         profile_json = json.dumps(profile, indent=2).encode("utf-8")
         storage.upload_file(
-            f"results/{bundle_id}/morphologic_profile.json", profile_json, "application/json"
+            f"results/{bundle_id}/morphologic_profile.json",
+            profile_json,
+            "application/json",
         )
 
     # Audit trail entry (in-memory representation; actual emit happens in service layer)
@@ -437,7 +465,11 @@ def create_image_analysis_graph():
 
     wf.set_entry_point("validate_input")
 
-    wf.add_conditional_edges("validate_input", _should_continue, {"continue": "load_image", "end": "finalize"})
+    wf.add_conditional_edges(
+        "validate_input",
+        _should_continue,
+        {"continue": "load_image", "end": "finalize"},
+    )
     wf.add_edge("load_image", "resolve_roi")
     wf.add_edge("resolve_roi", "run_ctranspath_embedding")
     wf.add_edge("run_ctranspath_embedding", "run_fuzzyarcloss_v3")

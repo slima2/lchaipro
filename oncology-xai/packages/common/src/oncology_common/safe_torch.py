@@ -19,5 +19,8 @@ def allow_numpy_globals() -> None:
     except ImportError:  # numpy 1.x
         from numpy.core.multiarray import scalar
 
-    dtypes = [type(np.dtype(t)) for t in ("float64", "float32", "float16", "int64", "int32", "bool")]
+    dtypes = [
+        type(np.dtype(t))
+        for t in ("float64", "float32", "float16", "int64", "int32", "bool")
+    ]
     torch.serialization.add_safe_globals([scalar, np.dtype, *dtypes])

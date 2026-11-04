@@ -17,7 +17,14 @@ from app.ml.checkpoints.loader import GENES_V2, CheckpointLoader
 
 logger = logging.getLogger(__name__)
 
-PATTERN_NAMES = ["micropapillary", "cribriform", "papillary", "lepidic", "solid", "acinar"]
+PATTERN_NAMES = [
+    "micropapillary",
+    "cribriform",
+    "papillary",
+    "lepidic",
+    "solid",
+    "acinar",
+]
 
 
 @dataclass
@@ -81,7 +88,9 @@ def run_choquet_inference(
         }
 
         interactions_named = {}
-        sorted_ints = sorted(raw_interactions.items(), key=lambda x: abs(x[1]), reverse=True)
+        sorted_ints = sorted(
+            raw_interactions.items(), key=lambda x: abs(x[1]), reverse=True
+        )
         for pair_key, val in sorted_ints[:5]:
             i_str, j_str = pair_key.split("_")
             i, j = int(i_str), int(j_str)

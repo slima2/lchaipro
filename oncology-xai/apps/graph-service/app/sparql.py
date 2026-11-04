@@ -83,8 +83,8 @@ async def get_case_subgraph(
         logger.warning("SPARQL query failed: %s — returning mock/OWL graph", e)
         bindings = []
 
-    nodes: dict[str, dict] = {}
-    edges: list[dict] = []
+    nodes = {}
+    edges = []
 
     for row in bindings:
         s, p, o = row.get("s", ""), row.get("p", ""), row.get("o", "")

@@ -24,7 +24,9 @@ def setup_metrics(app: FastAPI) -> None:
         metrics_app = make_asgi_app()
         app.mount("/metrics", metrics_app)
     except Exception:
-        logger.debug("could not mount /metrics", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+        logger.debug(
+            "could not mount /metrics", exc_info=True
+        )  # antes se ignoraba en silencio (Bandit S110)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -50,5 +52,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 status=response.status_code,
             ).observe(elapsed)
         except Exception:
-            logger.debug("could not record request metrics", exc_info=True)  # antes se ignoraba en silencio (Bandit S110)
+            logger.debug(
+                "could not record request metrics", exc_info=True
+            )  # antes se ignoraba en silencio (Bandit S110)
         return response

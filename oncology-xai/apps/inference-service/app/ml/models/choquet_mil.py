@@ -61,7 +61,9 @@ class FuzzyChoquetAggregation(nn.Module):
             order = torch.argsort(pattern_probs[:, k], descending=True)
             sorted_p = pattern_probs[order]
             cumsum = torch.cumsum(sorted_p, dim=0)
-            ranks = torch.arange(1, N + 1, device=pattern_probs.device).float().unsqueeze(1)
+            ranks = (
+                torch.arange(1, N + 1, device=pattern_probs.device).float().unsqueeze(1)
+            )
             cum_mean = cumsum / ranks
             mu_i = self.fuzzy_measure.measure(cum_mean)
             mu_i1 = torch.cat([mu_i[1:], torch.zeros(1, device=pattern_probs.device)])

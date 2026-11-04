@@ -94,8 +94,11 @@ class JWTValidator:
                     raise PyJWTError(f"Key not found: {kid}")
 
             payload = jwt.decode(
-                token, PyJWK(key, algorithm="RS256").key, algorithms=["RS256"],
-                audience=self.audience, issuer=self.issuer,
+                token,
+                PyJWK(key, algorithm="RS256").key,
+                algorithms=["RS256"],
+                audience=self.audience,
+                issuer=self.issuer,
                 options={
                     "verify_aud": self.audience is not None,
                     "verify_iss": self.issuer is not None,
@@ -103,9 +106,11 @@ class JWTValidator:
             )
 
             realm_roles = payload.get("realm_access", {}).get("roles", [])
-            client_roles = payload.get("resource_access", {}).get(
-                "oncology-api", {}
-            ).get("roles", [])
+            client_roles = (
+                payload.get("resource_access", {})
+                .get("oncology-api", {})
+                .get("roles", [])
+            )
 
             return TokenPayload(
                 sub=payload["sub"],

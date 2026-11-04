@@ -12,10 +12,16 @@ publicUrl: ""
 image:
   registry: 632100838024.dkr.ecr.us-east-1.amazonaws.com
   prefix: lchai-prod
+  # Separador entre prefix y nombre del servicio: "/" (<prefix>/<servicio>) o "-" (<prefix>-<servicio>, p. ej.
+  # cuando el registro publica imágenes planas como registry.gitlab.telconet.ec/docker/images/txt-solca-lchai-api-gateway)
+  separator: "/"
   tag: latest
   pullPolicy: Always
   # Etiqueta por servicio; si un servicio no aparece, usa image.tag
   tags: {}
+  # Secrets de pull adicionales para los pods (p. ej. [harbor-pull-secret]). Se suman a los de la
+  # ServiceAccount del namespace. [] = solo los de la ServiceAccount.
+  pullSecrets: []
 
 # Selectores de nodo por grupo. {} = sin nodeSelector
 nodeSelector:
@@ -27,6 +33,7 @@ nodeSelector:
 # StorageClass de los discos persistentes. "" = la clase por defecto del cluster
 storage:
   className: gp2
+  fixPermissions: false   # true en discos Lustre: initContainer que abre permisos de rabbitmq, fuseki y s3 (corren sin root)
 
 ingress:
   # alb (AWS) | nginx (ingress-nginx, con las anotaciones que lchai necesita) | traefik | generic (cualquier otro)
@@ -51,7 +58,7 @@ postgres:
 # Apagado en AWS (la base ya existe); encendido en minikube y Telconet.
 dbSchema:
   enabled: false
-  image: postgres:16-alpine
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/postgres:16.15-r1
 
 redis:
   host: lchai-prod-redis.wgz0ng.0001.use1.cache.amazonaws.com
@@ -72,11 +79,19 @@ environment: production
 
 keycloak:
   realm: oncology
+  # Client público del webapp en el realm (el del API es oncology-api, bearer-only)
+  webClientId: oncology-webapp
+  # Keycloak externo (p. ej. el Keycloak de test del cluster): no se despliega Keycloak en el namespace, ni su Service,
+  # ni rutas de Keycloak en el ingress; los servicios validan contra <url>/realms/<realm> y el webapp hace login ahí.
+  external:
+    enabled: false
+    url: ""            # p. ej. https://keycloak.ai-dev.i.telconet.net (sin "/" final)
   # Obligatoria: pasarla con --set keycloak.adminPassword=... (nunca en el repo)
   adminPassword: ""
-  image: quay.io/keycloak/keycloak:23.0.7
-  # Modo producción detrás del ingress (TLS termina en el ingress)
-  args: ["start", "--http-enabled=true", "--proxy=edge", "--hostname-strict=false"]
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/keycloak:26.8.1-r1
+  # Modo producción detrás del ingress (TLS termina en el ingress; X-Forwarded-* vía KC_PROXY_HEADERS).
+  # --optimized: la imagen ya trae el build (postgres + health), no reaugmenta al arrancar.
+  args: ["start", "--optimized", "--http-enabled=true", "--hostname-strict=false"]
   # La consola de administración (/admin) y el realm master no se publican por el ingress.
   # Para administrar: kubectl port-forward svc/keycloak 8080:8080
   exposeAdmin: false
@@ -86,14 +101,14 @@ keycloak:
   importRealm: false
 
 rabbitmq:
-  image: rabbitmq:4.1.8-management-alpine
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/rabbitmq:4.1.8-management-alpine
   username: lchai
   password: ""          # obligatoria (--set)
   replicas: 1
   storage: 5Gi
 
 fuseki:
-  image: stain/jena-fuseki@sha256:b1d0c96f19adddef417520184471ac816cf36c6e72936a88ea02b29f4305929a   # 5.1.0
+  image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/fuseki:6.2.0-r1   # Jena Fuseki 6.2.0
   adminPassword: ""     # obligatoria (--set)
   storage: 10Gi
 
@@ -108,6 +123,11 @@ inferenceWorker:
   resources:
     requests: { cpu: "2", memory: 4Gi }
     limits: { cpu: "4", memory: 8Gi }
+
+# Readiness de los servicios Python. http = GET /metrics (o /health), deja una línea de access log cada 15 s por pod;
+# tcpSocket = solo comprueba que el puerto acepta conexiones (sin ruido en los logs).
+probes:
+  type: http
 
 services:
   gateway:
@@ -140,17 +160,25 @@ remoteWorker:
   allowedCidrs: []            # obligatorio: IP del worker remoto, p. ej. ["10.20.0.15/32"]
   annotations: {}             # p. ej. balanceador interno del proveedor
 
+# Contraseñas y claves fuera del chart. false = el chart crea lchai-secrets con los values (postgres.password,
+# rabbitmq.password, ...). true = el chart NO crea lchai-secrets ni lchai-s3-config: deben existir en el namespace,
+# creados por fuera (kubectl, External Secrets), con las claves de templates/secret.yaml y s3.json (SeaweedFS).
+# Con true no se pasa ninguna contraseña en los values. Con localDeps y Redis, REDIS_PASSWORD debe ser no vacía.
+secrets:
+  existing: false
+
 # PostgreSQL, Redis y almacenamiento S3 (SeaweedFS) dentro del cluster (minikube u on-premise sin servicios administrados)
 localDeps:
   enabled: false
   postgres:
-    image: postgres:16-alpine
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/postgres:16.15-r1
     storage: 5Gi
+    fixPermissions: false   # true en discos Lustre (initContainer root que abre permisos; postgres corre como uid 70)
   redis:
-    image: redis:7-alpine
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/redis:7-alpine
   s3:
-    image: chrislusf/seaweedfs:4.48
-    awsCliImage: amazon/aws-cli:2.17.0
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/seaweedfs:4.51-r1
+    awsCliImage: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/aws-cli:2.39.2
     storage: 20Gi
     host: ""          # host público para las URL firmadas (ingress)
     publicPort: null  # puerto público si no es 80/443 (ej. port-forward 8080)
@@ -160,6 +188,11 @@ localDeps:
       limits: { cpu: "1", memory: 3Gi }
 
 # Autenticación en el gateway
+# Nombres de Deployment/StatefulSet/Job: <workloadPrefix>-<componente>-<workloadSuffix>
+# (p. ej. txt-solca-lchai-postgres-pre). Los Service no cambian. Vacíos = nombres simples (api-gateway, postgres...).
+workloadPrefix: ""
+workloadSuffix: ""
+
 auth:
   jwtIssuer: ""         # vacío = <publicUrl>/realms/<realm> si hay publicUrl
   jwtAudience: ""       # "oncology-api" cuando el realm tiene el mapper de audiencia

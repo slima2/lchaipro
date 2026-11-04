@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: rabbitmq
+  name: {{ include "lchai.wl" (dict "root" $ "name" "rabbitmq") }}
 spec:
   serviceName: rabbitmq
   replicas: {{ .Values.rabbitmq.replicas }}
@@ -15,10 +15,17 @@ spec:
         app: rabbitmq
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
+      {{- include "lchai.depPodContext" (dict "gid" 101) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- if .Values.storage.fixPermissions }}
+      initContainers:
+        {{- include "lchai.fixPermsInit" (dict "image" .Values.rabbitmq.image "path" "/var/lib/rabbitmq" "volume" "data") | nindent 8 }}
+      {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: rabbitmq
           image: {{ .Values.rabbitmq.image }}
+          {{- include "lchai.depContext" (dict "uid" 100 "gid" 101) | nindent 10 }}
           ports:
             - containerPort: 5672
             - containerPort: 15672
@@ -29,9 +36,19 @@ spec:
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
                 secretKeyRef: { name: lchai-secrets, key: RABBITMQ_PASSWORD }
+            {{- if eq (int .Values.rabbitmq.replicas) 1 }}
+            # La cookie de Erlang (~/.erlang.cookie) debe ser 0400/0600. En el volumen Lustre
+            # los permisos pueden quedar con bits de grupo (fsGroup/setgid/ACL) y RabbitMQ
+            # aborta con "Cookie file ... must be accessible by owner only". Con 1 réplica no
+            # hay clustering, así que la cookie va a un emptyDir (/tmp); los datos siguen en el PVC.
+            - name: HOME
+              value: /tmp
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 250m
@@ -40,6 +57,10 @@ spec:
               cpu: 500m
               memory: 512Mi
               ephemeral-storage: 1Gi   # disco temporal acotado (SonarQube S6870); los datos van al volumen
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -1,0 +1,4 @@
+# Trivy CVE suppressions - txt/solca/lchai (CHART-3-scan-images)
+# Formato: <CVE-ID> exp:<YYYY-MM-DD>  (al vencer, Trivy vuelve a reportarlos y el gate bloquea)
+# SOLO CVE sin fix disponible en imagenes de terceros; las imagenes propias no llevan excepciones.
+# Vacio hasta que el primer escaneo en promote/preprod-* muestre hallazgos sin fix.

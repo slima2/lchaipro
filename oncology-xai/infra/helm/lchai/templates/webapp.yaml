@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webapp
+  name: {{ include "lchai.wl" (dict "root" $ "name" "webapp") }}
 spec:
   replicas: {{ .Values.services.webapp.replicas }}
   selector:
@@ -15,6 +15,7 @@ spec:
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: webapp
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" "webapp") }}
@@ -27,12 +28,25 @@ spec:
               value: {{ .Values.webapp.cspS3Origin | default (ternary (regexFind "^https?://[^/]+" (include "lchai.s3Endpoint" .)) (printf "https://*.s3.amazonaws.com https://s3.%s.amazonaws.com" .Values.s3.region) (not (empty (include "lchai.s3Endpoint" .)))) | quote }}
             - name: VITE_API_URL
               value: "https://{{ .Values.domain }}"
-            - name: VITE_KEYCLOAK_URL
-              value: "https://{{ .Values.domain }}"
-            - name: VITE_KEYCLOAK_REALM
-              value: "oncology"
-            - name: VITE_KEYCLOAK_CLIENT_ID
-              value: "oncology-webapp"
+            # Login en runtime (/runtime-config.js). Keycloak externo: su URL y su origen en el CSP; interno: mismo dominio
+            - name: KEYCLOAK_URL
+              value: {{ ternary (include "lchai.kcBaseUrl" .) "" (not (empty (include "lchai.kcExternal" .))) | quote }}
+            - name: CSP_KEYCLOAK_ORIGIN
+              value: {{ ternary (regexFind "^https?://[^/]+" (include "lchai.kcBaseUrl" .)) "" (not (empty (include "lchai.kcExternal" .))) | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.webClientId | default "oncology-webapp" | quote }}
+          {{- if .Values.podSecurity.hardened }}
+          # Raíz de solo lectura: nginx escribe la configuración generada desde la plantilla, la caché y el PID
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+          {{- end }}
           resources:
             requests:
               cpu: 100m
@@ -40,6 +54,18 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      {{- if .Values.podSecurity.hardened }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: nginx-conf
+          emptyDir:
+            sizeLimit: 8Mi
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

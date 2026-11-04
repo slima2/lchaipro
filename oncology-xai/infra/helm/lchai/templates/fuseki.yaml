@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: fuseki
+  name: {{ include "lchai.wl" (dict "root" $ "name" "fuseki") }}
 spec:
   serviceName: fuseki
   replicas: 1
@@ -15,10 +15,17 @@ spec:
         app: fuseki
     spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
+      {{- include "lchai.depPodContext" (dict "gid" 101) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- if .Values.storage.fixPermissions }}
+      initContainers:
+        {{- include "lchai.fixPermsInit" (dict "image" .Values.fuseki.image "path" "/fuseki/databases" "volume" "data") | nindent 8 }}
+      {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: fuseki
           image: {{ .Values.fuseki.image }}
+          {{- include "lchai.depContext" (dict "uid" 100 "gid" 101) | nindent 10 }}
           ports:
             - containerPort: 3030
           env:
@@ -30,6 +37,10 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /fuseki/databases
+            - name: base
+              mountPath: /fuseki
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 250m
@@ -38,6 +49,13 @@ spec:
               cpu: "1"
               memory: 1Gi
               ephemeral-storage: 1Gi   # disco temporal acotado (SonarQube S6870); los datos van al volumen
+      volumes:
+        - name: base          # FUSEKI_BASE (shiro.ini, configuracion, logs); los datos persisten en /fuseki/databases
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
   volumeClaimTemplates:
     - metadata:
         name: data

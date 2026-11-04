@@ -4,6 +4,7 @@ Delta training: freeze CTransPath backbone, fine-tune FuzzyArcLoss V2 head only.
 Reads tile_data.npz from MinIO, trains on corrected tiles + buffer of originals,
 saves versioned .pth to MinIO (never overwrites the original on disk).
 """
+
 from __future__ import annotations
 
 import io
@@ -22,7 +23,14 @@ allow_numpy_globals()  # torch.load(weights_only=True) con los tipos de numpy de
 
 logger = logging.getLogger(__name__)
 
-PATTERN_NAMES = ["micropapillary", "cribriform", "papillary", "lepidic", "solid", "acinar"]
+PATTERN_NAMES = [
+    "micropapillary",
+    "cribriform",
+    "papillary",
+    "lepidic",
+    "solid",
+    "acinar",
+]
 PATTERN_TO_IDX = {p: i for i, p in enumerate(PATTERN_NAMES)}
 
 
@@ -51,9 +59,15 @@ def run_delta_training(
         npz = np.load(io.BytesIO(tile_bytes))
         tile_embeddings = npz["tile_embeddings"]
         n_tiles = tile_embeddings.shape[0]
-        logger.info("Loaded tile data: %d tiles, embeddings=%s", n_tiles, tile_embeddings.shape)
+        logger.info(
+            "Loaded tile data: %d tiles, embeddings=%s", n_tiles, tile_embeddings.shape
+        )
 
-        ck = torch.load(io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=True)
+        # weights_only=True: solo tensores, sin ejecutar pickle arbitrario
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        ck = torch.load(
+            io.BytesIO(current_pth_bytes), map_location="cpu", weights_only=True
+        )
         head_weight = ck.get("loss_fn", {}).get("head.weight")
         if head_weight is None:
             head_weight = ck.get("loss_fn", {}).get("weight")
@@ -78,11 +92,15 @@ def run_delta_training(
         if not corrected_indices:
             return None, "No valid corrections"
 
-        n_buffer = max(1, int(len(corrected_indices) * buffer_ratio / max(0.01, 1 - buffer_ratio)))
+        n_buffer = max(
+            1, int(len(corrected_indices) * buffer_ratio / max(0.01, 1 - buffer_ratio))
+        )
         all_indices = set(range(n_tiles))
         uncorrected = list(all_indices - set(corrected_indices))
         rng = np.random.default_rng(42)
-        buffer_indices = rng.choice(uncorrected, size=min(n_buffer, len(uncorrected)), replace=False).tolist()
+        buffer_indices = rng.choice(
+            uncorrected, size=min(n_buffer, len(uncorrected)), replace=False
+        ).tolist()
 
         emb_t = torch.from_numpy(tile_embeddings).float()
         with torch.no_grad():
@@ -113,7 +131,12 @@ def run_delta_training(
                 optimizer.step()
                 total_loss += loss.item()
             if (epoch + 1) % 5 == 0:
-                logger.info("Delta train epoch %d/%d, loss=%.4f", epoch + 1, n_epochs, total_loss / len(loader))
+                logger.info(
+                    "Delta train epoch %d/%d, loss=%.4f",
+                    epoch + 1,
+                    n_epochs,
+                    total_loss / len(loader),
+                )
 
         new_weight = head.weight.detach()
         if "loss_fn" in ck:
@@ -125,11 +148,17 @@ def run_delta_training(
         version_tag = f"al_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
         buf = io.BytesIO()
+        # Serializa un state_dict propio; se vuelve a leer con weights_only=True
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
         torch.save(ck, buf)
         pth_bytes = buf.getvalue()
 
-        logger.info("Delta training complete: %d corrections, %d buffer, version=%s",
-                     len(corrected_indices), len(buffer_indices), version_tag)
+        logger.info(
+            "Delta training complete: %d corrections, %d buffer, version=%s",
+            len(corrected_indices),
+            len(buffer_indices),
+            version_tag,
+        )
 
         return pth_bytes, version_tag
 

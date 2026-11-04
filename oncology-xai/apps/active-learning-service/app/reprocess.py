@@ -5,6 +5,7 @@ After delta training, this module calls the existing inference pipeline
 to regenerate overlays, pattern composition, and mutation predictions
 using the updated model. The inference-service is never modified.
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,7 +45,9 @@ async def trigger_reanalysis(image_id: str, case_id: str) -> dict:
             status = data.get("status", "UNKNOWN")
 
             if status == "COMPLETED":
-                logger.info("Re-analysis completed: rb=%s", data.get("result_bundle_id"))
+                logger.info(
+                    "Re-analysis completed: rb=%s", data.get("result_bundle_id")
+                )
                 return data
             elif status == "FAILED":
                 logger.error("Re-analysis failed: %s", data.get("error_detail"))
@@ -57,4 +60,5 @@ async def trigger_reanalysis(image_id: str, case_id: str) -> dict:
 
 async def _sleep(seconds: float):
     import asyncio
+
     await asyncio.sleep(seconds)

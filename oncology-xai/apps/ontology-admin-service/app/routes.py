@@ -6,8 +6,6 @@ import asyncio
 import json
 import logging
 from datetime import UTC, datetime
-
-logger = logging.getLogger(__name__)
 from typing import Any
 from uuid import uuid4
 
@@ -34,6 +32,8 @@ from app.models import (
     OntologyVersionDB,
 )
 
+logger = logging.getLogger(__name__)
+
 # Tareas en segundo plano en curso (ver S7502 más abajo)
 _BACKGROUND_TASKS: set = set()
 
@@ -42,11 +42,17 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Ontology Admin"])
 
 @router.get("/ontologies")
 async def list_ontologies(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(OntologyVersionDB).order_by(OntologyVersionDB.imported_at.desc()))
+    result = await db.execute(
+        select(OntologyVersionDB).order_by(OntologyVersionDB.imported_at.desc())
+    )
     return [
         {
-            "ontology_version_id": v.id, "name": v.name, "version_tag": v.version_tag,
-            "source_uri": v.source_uri, "hash": v.hash, "is_active": v.is_active,
+            "ontology_version_id": v.id,
+            "name": v.name,
+            "version_tag": v.version_tag,
+            "source_uri": v.source_uri,
+            "hash": v.hash,
+            "is_active": v.is_active,
             "imported_at": v.imported_at.isoformat() if v.imported_at else None,
         }
         for v in result.scalars().all()
@@ -83,23 +89,34 @@ async def run_validation(proposal_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Proposal not found")
     p.status = "VALIDATING"
     # Mock validation
-    p.validation_results = {"consistency": True, "sparql_tests_passed": 5, "sparql_tests_failed": 0}
+    p.validation_results = {
+        "consistency": True,
+        "sparql_tests_passed": 5,
+        "sparql_tests_failed": 0,
+    }
     p.status = "VALIDATED"
     await db.commit()
     return _proposal_dict(p)
 
 
 @router.post("/ontologies/proposals/{proposal_id}:approve-and-publish")
-async def approve_and_publish(proposal_id: str, body: dict[str, Any] | None = None, db: AsyncSession = Depends(get_db)):
+async def approve_and_publish(
+    proposal_id: str,
+    body: dict[str, Any] | None = None,
+    db: AsyncSession = Depends(get_db),
+):
     p = await db.get(OntologyUpdateProposalDB, proposal_id)
     if not p:
         raise HTTPException(status_code=404, detail="Proposal not found")
     if p.status not in ("VALIDATED", "PENDING_APPROVAL"):
-        raise HTTPException(status_code=400, detail=f"Cannot publish proposal in status {p.status}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot publish proposal in status {p.status}"
+        )
 
     p.status = "PUBLISHED"
     p.approved_by = (body or {}).get("approved_by", "admin")
     from datetime import datetime
+
     p.published_at = datetime.utcnow()
     await db.commit()
     return _proposal_dict(p)
@@ -117,10 +134,16 @@ async def rollback_proposal(proposal_id: str, db: AsyncSession = Depends(get_db)
 
 def _proposal_dict(p: OntologyUpdateProposalDB) -> dict:
     return {
-        "proposal_id": p.id, "targets": p.targets, "mode": p.mode, "status": p.status,
-        "diff_report_uri": p.diff_report_uri, "impact": p.impact,
-        "reasoner_report_uri": p.reasoner_report_uri, "validation_results": p.validation_results,
-        "created_by": p.created_by, "approved_by": p.approved_by,
+        "proposal_id": p.id,
+        "targets": p.targets,
+        "mode": p.mode,
+        "status": p.status,
+        "diff_report_uri": p.diff_report_uri,
+        "impact": p.impact,
+        "reasoner_report_uri": p.reasoner_report_uri,
+        "validation_results": p.validation_results,
+        "created_by": p.created_by,
+        "approved_by": p.approved_by,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "published_at": p.published_at.isoformat() if p.published_at else None,
     }
@@ -129,6 +152,7 @@ def _proposal_dict(p: OntologyUpdateProposalDB) -> dict:
 # ──────────────────────────────────────────────────────────────────────
 # DeepSearch Pipeline
 # ──────────────────────────────────────────────────────────────────────
+
 
 @router.post("/deep-search", status_code=status.HTTP_201_CREATED)
 async def run_deep_search(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
@@ -149,7 +173,8 @@ async def run_deep_search(body: dict[str, Any], db: AsyncSession = Depends(get_d
 
     try:
         result = await run_pipeline(
-            text, source_type,
+            text,
+            source_type,
             llm_provider=settings.llm_provider,
             openai_api_key=settings.openai_api_key,
             anthropic_api_key=settings.anthropic_api_key,
@@ -195,7 +220,9 @@ async def get_deep_search_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
 def _job_dict(j: DeepSearchJobDB) -> dict:
     return {
-        "job_id": j.id, "status": j.status, "source_type": j.source_type,
+        "job_id": j.id,
+        "status": j.status,
+        "source_type": j.source_type,
         "extracted_relations": j.extracted_relations,
         "linked_entities": j.linked_entities,
         "validation_result": j.validation_result,
@@ -209,6 +236,7 @@ def _job_dict(j: DeepSearchJobDB) -> dict:
 # KG Versioning
 # ──────────────────────────────────────────────────────────────────────
 
+
 @router.post("/kg/snapshots", status_code=status.HTTP_201_CREATED)
 async def create_kg_snapshot(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
     """Create a new KG version snapshot from validated DeepSearch results."""
@@ -220,7 +248,10 @@ async def create_kg_snapshot(body: dict[str, Any], db: AsyncSession = Depends(ge
         id=str(uuid4()),
         version_tag=version_tag,
         description=description,
-        nodes_count=len({r.get("subject_iri") for r in relations} | {r.get("object_iri") for r in relations}),
+        nodes_count=len(
+            {r.get("subject_iri") for r in relations}
+            | {r.get("object_iri") for r in relations}
+        ),
         edges_count=len(relations),
         sources=body.get("sources", ["DeepSearch"]),
         format="jsonld",
@@ -271,8 +302,12 @@ async def get_kg_changelog(snapshot_id: str, db: AsyncSession = Depends(get_db))
     )
     return [
         {
-            "id": e.id, "action": e.action, "entity_type": e.entity_type,
-            "entity_id": e.entity_id, "detail": e.detail, "provenance": e.provenance,
+            "id": e.id,
+            "action": e.action,
+            "entity_type": e.entity_type,
+            "entity_id": e.entity_id,
+            "detail": e.detail,
+            "provenance": e.provenance,
             "created_at": e.created_at.isoformat() if e.created_at else None,
         }
         for e in result.scalars().all()
@@ -281,9 +316,14 @@ async def get_kg_changelog(snapshot_id: str, db: AsyncSession = Depends(get_db))
 
 def _snapshot_dict(s: KGSnapshotDB) -> dict:
     return {
-        "snapshot_id": s.id, "version_tag": s.version_tag, "description": s.description,
-        "nodes_count": s.nodes_count, "edges_count": s.edges_count,
-        "snapshot_uri": s.snapshot_uri, "format": s.format, "sources": s.sources,
+        "snapshot_id": s.id,
+        "version_tag": s.version_tag,
+        "description": s.description,
+        "nodes_count": s.nodes_count,
+        "edges_count": s.edges_count,
+        "snapshot_uri": s.snapshot_uri,
+        "format": s.format,
+        "sources": s.sources,
         "created_by": s.created_by,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
@@ -293,8 +333,11 @@ def _snapshot_dict(s: KGSnapshotDB) -> dict:
 # Batch Literature DeepSearch (long-running background job)
 # ──────────────────────────────────────────────────────────────────────
 
+
 @router.post("/deep-search/batch", status_code=status.HTTP_202_ACCEPTED)
-async def start_batch_deep_search(body: dict[str, Any] | None = None, db: AsyncSession = Depends(get_db)):
+async def start_batch_deep_search(
+    body: dict[str, Any] | None = None, db: AsyncSession = Depends(get_db)
+):
     """Launch batch literature search across PubMed, arXiv, Semantic Scholar.
 
     Runs in background: searches → extracts relations via LLM → links → validates → persists.
@@ -307,7 +350,9 @@ async def start_batch_deep_search(body: dict[str, Any] | None = None, db: AsyncS
         id=str(uuid4()),
         source_type="batch_literature",
         status="RUNNING",
-        source_text=json.dumps({"queries": queries[:3], "sources": sources, "total_queries": len(queries)}),
+        source_text=json.dumps(
+            {"queries": queries[:3], "sources": sources, "total_queries": len(queries)}
+        ),
     )
     db.add(job)
     await db.commit()
@@ -371,13 +416,21 @@ async def _run_batch_job(job_id: str, queries: list[str], sources: list[str]) ->
                     all_invalid.extend(validation["invalid"])
                     papers_processed += 1
                 except Exception as e:
-                    logger.warning("Extraction failed for paper %s: %s", paper.get("id", "?")[:20], e)
+                    logger.warning(
+                        "Extraction failed for paper %s: %s",
+                        paper.get("id", "?")[:20],
+                        e,
+                    )
 
             # Deduplicate across all papers
             seen: set[tuple] = set()
             unique_valid: list[dict] = []
             for rel in all_valid:
-                key = (rel.get("subject_iri"), rel.get("predicate"), rel.get("object_iri"))
+                key = (
+                    rel.get("subject_iri"),
+                    rel.get("predicate"),
+                    rel.get("object_iri"),
+                )
                 if key not in seen and all(key):
                     seen.add(key)
                     unique_valid.append(rel)
@@ -422,7 +475,9 @@ async def _run_batch_job(job_id: str, queries: list[str], sources: list[str]) ->
             await db.commit()
             logger.info(
                 "Batch job %s COMPLETED: %d papers → %d unique valid relations",
-                job_id[:8], papers_processed, len(unique_valid),
+                job_id[:8],
+                papers_processed,
+                len(unique_valid),
             )
 
         except Exception as exc:
@@ -441,18 +496,25 @@ async def list_discovered_relations(
     """List all discovered relations from batch searches."""
     result = await db.execute(
         select(DiscoveredRelationDB)
-        .where(DiscoveredRelationDB.is_active == True)
+        .where(DiscoveredRelationDB.is_active.is_(True))
         .order_by(DiscoveredRelationDB.created_at.desc())
         .limit(limit)
     )
     return [
         {
-            "id": r.id, "subject": r.subject, "predicate": r.predicate, "object": r.object,
-            "subject_iri": r.subject_iri, "object_iri": r.object_iri,
-            "subject_type": r.subject_type, "object_type": r.object_type,
+            "id": r.id,
+            "subject": r.subject,
+            "predicate": r.predicate,
+            "object": r.object,
+            "subject_iri": r.subject_iri,
+            "object_iri": r.object_iri,
+            "subject_type": r.subject_type,
+            "object_type": r.object_type,
             "evidence_quote": r.evidence_quote,
-            "paper_source": r.paper_source, "paper_id": r.paper_id,
-            "paper_title": r.paper_title, "paper_url": r.paper_url,
+            "paper_source": r.paper_source,
+            "paper_id": r.paper_id,
+            "paper_title": r.paper_title,
+            "paper_url": r.paper_url,
             "confidence": r.confidence,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }

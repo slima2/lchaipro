@@ -44,7 +44,10 @@ MAX_RESULTS_PER_SOURCE = 5
 # PubMed (NCBI E-utilities — free, no API key required for low volume)
 # ──────────────────────────────────────────────────────────────────────
 
-async def search_pubmed(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -> list[dict[str, Any]]:
+
+async def search_pubmed(
+    query: str, max_results: int = MAX_RESULTS_PER_SOURCE
+) -> list[dict[str, Any]]:
     """Search PubMed and return abstracts."""
     results = []
     try:
@@ -53,8 +56,11 @@ async def search_pubmed(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -
             search_resp = await client.get(
                 "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
                 params={
-                    "db": "pubmed", "term": query, "retmax": max_results,
-                    "sort": "relevance", "retmode": "json",
+                    "db": "pubmed",
+                    "term": query,
+                    "retmax": max_results,
+                    "sort": "relevance",
+                    "retmode": "json",
                 },
             )
             if search_resp.status_code != 200:
@@ -67,8 +73,10 @@ async def search_pubmed(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -
             fetch_resp = await client.get(
                 "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
                 params={
-                    "db": "pubmed", "id": ",".join(ids),
-                    "rettype": "abstract", "retmode": "xml",
+                    "db": "pubmed",
+                    "id": ",".join(ids),
+                    "rettype": "abstract",
+                    "retmode": "xml",
                 },
             )
             if fetch_resp.status_code != 200:
@@ -81,14 +89,16 @@ async def search_pubmed(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -
                 title = _extract_xml_tag(xml_text, "ArticleTitle")
                 abstract = _extract_xml_tag(xml_text, "AbstractText")
                 if title or abstract:
-                    results.append({
-                        "source": "PubMed",
-                        "id": f"PMID:{pmid}",
-                        "title": title[:300] if title else "",
-                        "abstract": abstract[:2000] if abstract else "",
-                        "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-                        "query": query,
-                    })
+                    results.append(
+                        {
+                            "source": "PubMed",
+                            "id": f"PMID:{pmid}",
+                            "title": title[:300] if title else "",
+                            "abstract": abstract[:2000] if abstract else "",
+                            "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                            "query": query,
+                        }
+                    )
                     # Remove used content to get next article
                     if title:
                         xml_text = xml_text.replace(title, "", 1)
@@ -101,7 +111,10 @@ async def search_pubmed(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -
 # Semantic Scholar (free API, 100 req/5min without key)
 # ──────────────────────────────────────────────────────────────────────
 
-async def search_semantic_scholar(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -> list[dict[str, Any]]:
+
+async def search_semantic_scholar(
+    query: str, max_results: int = MAX_RESULTS_PER_SOURCE
+) -> list[dict[str, Any]]:
     """Search Semantic Scholar for papers (with retry on 429)."""
     results = []
     try:
@@ -110,7 +123,8 @@ async def search_semantic_scholar(query: str, max_results: int = MAX_RESULTS_PER
                 resp = await client.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search",
                     params={
-                        "query": query, "limit": max_results,
+                        "query": query,
+                        "limit": max_results,
                         "fields": "title,abstract,url,year,citationCount",
                     },
                 )
@@ -125,16 +139,18 @@ async def search_semantic_scholar(query: str, max_results: int = MAX_RESULTS_PER
             data = resp.json().get("data", [])
             for paper in data:
                 if paper.get("abstract"):
-                    results.append({
-                        "source": "SemanticScholar",
-                        "id": paper.get("paperId", ""),
-                        "title": (paper.get("title") or "")[:300],
-                        "abstract": (paper.get("abstract") or "")[:2000],
-                        "url": paper.get("url", ""),
-                        "year": paper.get("year"),
-                        "citations": paper.get("citationCount", 0),
-                        "query": query,
-                    })
+                    results.append(
+                        {
+                            "source": "SemanticScholar",
+                            "id": paper.get("paperId", ""),
+                            "title": (paper.get("title") or "")[:300],
+                            "abstract": (paper.get("abstract") or "")[:2000],
+                            "url": paper.get("url", ""),
+                            "year": paper.get("year"),
+                            "citations": paper.get("citationCount", 0),
+                            "query": query,
+                        }
+                    )
     except Exception as e:
         logger.warning("Semantic Scholar search failed for '%s': %s", query[:50], e)
     return results
@@ -144,7 +160,10 @@ async def search_semantic_scholar(query: str, max_results: int = MAX_RESULTS_PER
 # arXiv (free, no auth)
 # ──────────────────────────────────────────────────────────────────────
 
-async def search_arxiv(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) -> list[dict[str, Any]]:
+
+async def search_arxiv(
+    query: str, max_results: int = MAX_RESULTS_PER_SOURCE
+) -> list[dict[str, Any]]:
     """Search arXiv for papers (cs.AI, q-bio, cs.LG categories)."""
     results = []
     try:
@@ -153,7 +172,8 @@ async def search_arxiv(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) ->
                 "https://export.arxiv.org/api/query",
                 params={
                     "search_query": f"all:{query}",
-                    "start": 0, "max_results": max_results,
+                    "start": 0,
+                    "max_results": max_results,
                     "sortBy": "relevance",
                 },
             )
@@ -167,14 +187,16 @@ async def search_arxiv(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) ->
                 summary = _extract_xml_tag(entry, "summary")
                 arxiv_id = _extract_xml_tag(entry, "id")
                 if title and summary:
-                    results.append({
-                        "source": "arXiv",
-                        "id": arxiv_id or "",
-                        "title": title.strip()[:300],
-                        "abstract": summary.strip()[:2000],
-                        "url": arxiv_id or "",
-                        "query": query,
-                    })
+                    results.append(
+                        {
+                            "source": "arXiv",
+                            "id": arxiv_id or "",
+                            "title": title.strip()[:300],
+                            "abstract": summary.strip()[:2000],
+                            "url": arxiv_id or "",
+                            "query": query,
+                        }
+                    )
     except Exception as e:
         logger.warning("arXiv search failed for '%s': %s", query[:50], e)
     return results
@@ -183,6 +205,7 @@ async def search_arxiv(query: str, max_results: int = MAX_RESULTS_PER_SOURCE) ->
 # ──────────────────────────────────────────────────────────────────────
 # Batch search: all sources, all queries
 # ──────────────────────────────────────────────────────────────────────
+
 
 async def batch_literature_search(
     queries: list[str] | None = None,
@@ -216,15 +239,26 @@ async def batch_literature_search(
                     seen_titles.add(title_key)
                     all_papers.append(p)
 
-        logger.info("Batch search [%d/%d]: query='%s' — %d total papers so far", qi + 1, len(queries), query[:40], len(all_papers))
+        logger.info(
+            "Batch search [%d/%d]: query='%s' — %d total papers so far",
+            qi + 1,
+            len(queries),
+            query[:40],
+            len(all_papers),
+        )
 
-    logger.info("Batch literature search complete: %d unique papers from %d queries", len(all_papers), len(queries))
+    logger.info(
+        "Batch literature search complete: %d unique papers from %d queries",
+        len(all_papers),
+        len(queries),
+    )
     return all_papers
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────
+
 
 def _extract_xml_tag(xml: str, tag: str) -> str:
     """Simple XML tag extraction (no lxml dependency)."""
@@ -238,4 +272,4 @@ def _extract_xml_tag(xml: str, tag: str) -> str:
     end = xml.find(f"</{tag}>", close_bracket)
     if end == -1:
         return ""
-    return xml[close_bracket + 1:end].strip()
+    return xml[close_bracket + 1 : end].strip()

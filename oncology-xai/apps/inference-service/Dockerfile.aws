@@ -1,5 +1,8 @@
 FROM python:3.12.15-slim-trixie
 
+# Paquetes de Debian sin versión fija (DL3008): trixie retira las versiones viejas y el build se rompería;
+# la imagen base está fijada y Trivy controla las CVE de lo instalado.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 libopenslide0 libvips42 && rm -rf /var/lib/apt/lists/*
 
@@ -16,13 +19,22 @@ COPY apps/inference-service/app/ app/
 COPY apps/inference-service/alembic.ini .
 COPY apps/inference-service/alembic/ alembic/
 
+# Misma versión de torch que el Dockerfile principal (Hadolint DL3013).
+# Sin privilegios de administrador (Checkov CKV_DOCKER_3, Trivy DS-0002). HOME en /tmp para cachés (torch, matplotlib)
 RUN pip install --no-cache-dir \
-    torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
-    pip install --no-cache-dir -e .
+    torch==2.6.0 torchvision==0.21.0 \
+    --index-url https://download.pytorch.org/whl/cu124 --extra-index-url https://pypi.org/simple && \
+    pip install --no-cache-dir -e . && \
+    useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 
-# Pre-bake model checkpoints into the image
+# Pre-bake model checkpoints into the image (solo lectura para el usuario app)
 COPY models/backbones/ /data/models/
 COPY models/checkpoints/ /data/checkpoints/
 
+ENV HOME=/tmp
+USER 10001
+
 EXPOSE 8003
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/metrics', timeout=4)"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]

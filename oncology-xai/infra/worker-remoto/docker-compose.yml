@@ -9,7 +9,7 @@ services:
   # Descarga los modelos (~330 MB + checkpoints) del bucket de modelos. Con `sync` solo baja lo que falta.
   # En una EC2 usa el rol IAM de la instancia; fuera de AWS, las variables AWS_* del entorno.
   modelos:
-    image: amazon/aws-cli:2.17.0
+    image: amazon/aws-cli:2.39.2
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -44,6 +44,13 @@ services:
     volumes:
       - modelos:/data:ro
     restart: unless-stopped
+    # La imagen trae un HEALTHCHECK para la API (puerto 8003); el worker responde por el broker
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app:celery inspect ping -d celery@$$HOSTNAME --timeout 10"]
+      interval: 60s
+      timeout: 20s
+      start_period: 120s
+      retries: 3
     # Igual que en el cluster: sin root, sin escalada de privilegios y sin capacidades extra
     user: "10001"
     security_opt: ["no-new-privileges:true"]

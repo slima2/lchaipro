@@ -18,13 +18,20 @@ router = APIRouter(prefix="/api/v1", tags=["EHR"])
 
 
 @router.post("/cases/{case_id}/ehr:ingest", status_code=status.HTTP_201_CREATED)
-async def ingest_ehr(case_id: str, body: dict[str, Any], db: AsyncSession = Depends(get_db)):
+async def ingest_ehr(
+    case_id: str, body: dict[str, Any], db: AsyncSession = Depends(get_db)
+):
     content = body.get("content", "")
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
 
     # Check version
-    stmt = select(EHRDocumentDB).where(EHRDocumentDB.case_id == case_id).order_by(EHRDocumentDB.version.desc()).limit(1)
+    stmt = (
+        select(EHRDocumentDB)
+        .where(EHRDocumentDB.case_id == case_id)
+        .order_by(EHRDocumentDB.version.desc())
+        .limit(1)
+    )
     result = await db.execute(stmt)
     latest = result.scalar_one_or_none()
     version = (latest.version + 1) if latest else 1
@@ -45,7 +52,11 @@ async def ingest_ehr(case_id: str, body: dict[str, Any], db: AsyncSession = Depe
 
 @router.get("/cases/{case_id}/ehr/versions")
 async def list_ehr_versions(case_id: str, db: AsyncSession = Depends(get_db)):
-    stmt = select(EHRDocumentDB).where(EHRDocumentDB.case_id == case_id).order_by(EHRDocumentDB.version.desc())
+    stmt = (
+        select(EHRDocumentDB)
+        .where(EHRDocumentDB.case_id == case_id)
+        .order_by(EHRDocumentDB.version.desc())
+    )
     result = await db.execute(stmt)
     return [_doc_dict(d) for d in result.scalars().all()]
 
@@ -84,7 +95,9 @@ async def extract_and_map(ehr_id: str, db: AsyncSession = Depends(get_db)):
             section=ent.section,
         )
         db.add(ent_db)
-        created_entities.append({"entity_id": ent_id, "text": ent.text, "type": ent.entity_type})
+        created_entities.append(
+            {"entity_id": ent_id, "text": ent.text, "type": ent.entity_type}
+        )
 
         # Map to ontology
         mappings = map_entity_to_ontology(ent)
@@ -117,7 +130,14 @@ async def get_entities(ehr_id: str, db: AsyncSession = Depends(get_db)):
     stmt = select(EHREntityDB).where(EHREntityDB.ehr_id == ehr_id)
     result = await db.execute(stmt)
     return [
-        {"entity_id": e.id, "text": e.text, "type": e.entity_type, "start": e.start, "end": e.end, "confidence": e.confidence}
+        {
+            "entity_id": e.id,
+            "text": e.text,
+            "type": e.entity_type,
+            "start": e.start,
+            "end": e.end,
+            "confidence": e.confidence,
+        }
         for e in result.scalars().all()
     ]
 
@@ -127,14 +147,24 @@ async def get_mappings(ehr_id: str, db: AsyncSession = Depends(get_db)):
     stmt = select(EHRMappingDB).join(EHREntityDB).where(EHREntityDB.ehr_id == ehr_id)
     result = await db.execute(stmt)
     return [
-        {"mapping_id": m.id, "entity_id": m.entity_id, "ontology": m.ontology, "iri": m.iri, "label": m.label, "confidence": m.confidence}
+        {
+            "mapping_id": m.id,
+            "entity_id": m.entity_id,
+            "ontology": m.ontology,
+            "iri": m.iri,
+            "label": m.label,
+            "confidence": m.confidence,
+        }
         for m in result.scalars().all()
     ]
 
 
 def _doc_dict(d: EHRDocumentDB) -> dict:
     return {
-        "ehr_id": d.id, "case_id": d.case_id, "version": d.version,
-        "source": d.source, "checksum": d.checksum,
+        "ehr_id": d.id,
+        "case_id": d.case_id,
+        "version": d.version,
+        "source": d.source,
+        "checksum": d.checksum,
         "created_at": d.created_at.isoformat() if d.created_at else None,
     }

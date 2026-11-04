@@ -14,8 +14,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("genetic_results", sa.Column("ablation_data", sa.JSON(), nullable=True))
-    op.add_column("genetic_results", sa.Column("permutation_data", sa.JSON(), nullable=True))
+    op.add_column(
+        "genetic_results", sa.Column("ablation_data", sa.JSON(), nullable=True)
+    )
+    op.add_column(
+        "genetic_results", sa.Column("permutation_data", sa.JSON(), nullable=True)
+    )
 
 
 def downgrade() -> None:

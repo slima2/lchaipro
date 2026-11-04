@@ -37,7 +37,9 @@ class StorageClient:
         self._client = boto3.client("s3", **kwargs)
 
     # ── upload ──────────────────────────────────────────────────────────
-    def upload_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+    def upload_bytes(
+        self, key: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> str:
         """Upload raw bytes. Returns the S3 URI."""
         sha = hashlib.sha256(data).hexdigest()
         self._client.put_object(
@@ -49,8 +51,12 @@ class StorageClient:
         )
         return f"s3://{self.bucket}/{key}"
 
-    def upload_fileobj(self, key: str, fobj: BinaryIO, content_type: str = "application/octet-stream") -> str:
-        self._client.upload_fileobj(fobj, self.bucket, key, ExtraArgs={"ContentType": content_type})
+    def upload_fileobj(
+        self, key: str, fobj: BinaryIO, content_type: str = "application/octet-stream"
+    ) -> str:
+        self._client.upload_fileobj(
+            fobj, self.bucket, key, ExtraArgs={"ContentType": content_type}
+        )
         return f"s3://{self.bucket}/{key}"
 
     # ── download ────────────────────────────────────────────────────────
@@ -67,7 +73,10 @@ class StorageClient:
         )
 
     def presigned_put_url(
-        self, key: str, content_type: str = "application/octet-stream", expires_in: int = 7200,
+        self,
+        key: str,
+        content_type: str = "application/octet-stream",
+        expires_in: int = 7200,
     ) -> str:
         """Generate a presigned URL for direct PUT upload from the browser."""
         return self._client.generate_presigned_url(
@@ -76,31 +85,48 @@ class StorageClient:
             ExpiresIn=expires_in,
         )
 
-    def create_multipart_upload(self, key: str, content_type: str = "application/octet-stream") -> str:
+    def create_multipart_upload(
+        self, key: str, content_type: str = "application/octet-stream"
+    ) -> str:
         """Initiate a multipart upload. Returns the UploadId."""
         resp = self._client.create_multipart_upload(
-            Bucket=self.bucket, Key=key, ContentType=content_type,
+            Bucket=self.bucket,
+            Key=key,
+            ContentType=content_type,
         )
         return resp["UploadId"]
 
-    def presigned_upload_part(self, key: str, upload_id: str, part_number: int, expires_in: int = 7200) -> str:
+    def presigned_upload_part(
+        self, key: str, upload_id: str, part_number: int, expires_in: int = 7200
+    ) -> str:
         """Generate a presigned URL for uploading one part of a multipart upload."""
         return self._client.generate_presigned_url(
             "upload_part",
-            Params={"Bucket": self.bucket, "Key": key, "UploadId": upload_id, "PartNumber": part_number},
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "UploadId": upload_id,
+                "PartNumber": part_number,
+            },
             ExpiresIn=expires_in,
         )
 
-    def complete_multipart_upload(self, key: str, upload_id: str, parts: list[dict]) -> dict:
+    def complete_multipart_upload(
+        self, key: str, upload_id: str, parts: list[dict]
+    ) -> dict:
         """Complete a multipart upload. parts = [{"ETag": "...", "PartNumber": 1}, ...]"""
         return self._client.complete_multipart_upload(
-            Bucket=self.bucket, Key=key, UploadId=upload_id,
+            Bucket=self.bucket,
+            Key=key,
+            UploadId=upload_id,
             MultipartUpload={"Parts": parts},
         )
 
     def abort_multipart_upload(self, key: str, upload_id: str) -> None:
         """Abort a multipart upload (cleanup)."""
-        self._client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
+        self._client.abort_multipart_upload(
+            Bucket=self.bucket, Key=key, UploadId=upload_id
+        )
 
     def head_object(self, key: str) -> dict:
         """Return metadata for an object (size, etag, etc). Raises if not found."""
@@ -109,7 +135,9 @@ class StorageClient:
     def download_range(self, key: str, start: int, end: int) -> bytes:
         """Download a byte range of an object (for partial reads like H&E validation)."""
         resp = self._client.get_object(
-            Bucket=self.bucket, Key=key, Range=f"bytes={start}-{end}",
+            Bucket=self.bucket,
+            Key=key,
+            Range=f"bytes={start}-{end}",
         )
         return resp["Body"].read()
 

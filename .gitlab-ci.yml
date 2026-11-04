@@ -1,0 +1,300 @@
+include:
+  - component: $CI_SERVER_FQDN/software-factory/cicd-components/agentic-pipeline/full-pipeline@v1
+  # Hardening gate: escaneo del chart + todas sus imágenes.
+  # Corre en MRs, ramas no-default y schedules — nunca en pushes a master.
+  - project: 'procesos/devops/ci-templates'
+    file: '/v1/ci-chart-scan.yml'
+    ref: master
+
+stages:
+  - CHART VALIDATION
+  - CHART SCAN
+  - analyze
+  - security
+  - build-trigger
+  - release
+  - deploy
+  - merge
+  - notify
+  - dora
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /^release: v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: never
+    - if: '$CI_COMMIT_MESSAGE =~ /^docs\(claude\): (add|update) CLAUDE\.md/'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^promote\/preprod-/'
+      variables:
+        CHART_SCAN_ENFORCE: "true"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+variables:
+  CHART_SCAN_ENFORCE: "false"
+  TRIVY_IGNORE_UNFIXED: "true"
+  CHART_TRUSTED_REGISTRIES: "registry.gitlab.telconet.ec harbor-llm.ai-dev.i.telconet.net"
+  CHART_SCAN_INSECURE: "true"
+  # Forzar generación del security-pipeline completo en cada MR push
+  FORCE_SECURITY_CHECKS: "true"
+
+# Override: separar el runner de seguridad (shared, default) del runner de
+# build (cluster propio). El componente agentic-pipeline solo expone
+# RUNNER_TAG_1/2 como variable GLOBAL aplicada por igual a todo lo generado
+# (security-pipeline.yml y build-pipeline.yml se generan dentro del job
+# "analyze" con las mismas env vars), así que no hay forma de separarlos vía
+# inputs del componente. Se re-exportan las variables entre gen-security y
+# gen-build (mismo patrón que general-services/stt-service y ocr-api-services):
+#   - security-pipeline.yml (sec:sonarqube, sec:sca, etc.) -> se queda en
+#     telconet-shared-docker-1/2 (default): el runner del cluster no alcanza
+#     SonarQube (172.24.15.x no es alcanzable desde la subred del cluster).
+#   - build-pipeline.yml (build-push:*, sec:image-scan:*, sec:sbom) ->
+#     procesos-cpu-runner: el runner compartido bloquea el push de imágenes
+#     >3GB (authz plugin dso-size-guard); la de inference-service pesa ~8GB
+#     (pesos de modelos). El runner del cluster usa executor Kubernetes con
+#     Docker-in-Docker efímero (dockerd nuevo por job), sin ese plugin.
+# NOTA: este override reemplaza el "script:" del job "analyze" del componente
+# v1 (engine v1.44.0). Si el componente cambia esos pasos internos, hay que
+# actualizar este bloque a mano.
+analyze:
+  script:
+    - agentic-engine version-bump
+    - set -a && . ./release.env && set +a
+    - export RUNNER_TAG_1="telconet-shared-docker-1"
+    - export RUNNER_TAG_2="telconet-shared-docker-2"
+    - agentic-engine gen-security
+    - export RUNNER_TAG_1="procesos-cpu-runner"
+    - export RUNNER_TAG_2="procesos-cpu-runner"
+    - agentic-engine gen-build
+    # build-push:* se queda en procesos-cpu-runner (dso-size-guard de los shared
+    # bloquea push >3GB). Pero sec:image-scan:* y sec:sbom:* usan trivy
+    # --skip-db-update --cache-dir /data/scan-data/db/trivy (--image-src remote,
+    # sin daemon docker): esa DB solo existe en los shared runners, en
+    # procesos-cpu-runner falla con "--skip-db-update cannot be specified on the
+    # first run". Reescribimos solo los tags de esos jobs.
+    - |
+      awk '
+        /^[^ #].*:[ ]*$/ { shared = ($0 ~ /^sec:(image-scan|sbom):/); n = 0 }
+        shared && /^        - procesos-cpu-runner[ ]*$/ { n++; print "        - telconet-shared-docker-" n; next }
+        { print }
+      ' build-pipeline.yml > build-pipeline.yml.tmp && mv build-pipeline.yml.tmp build-pipeline.yml
+# Override: allow_failure en dev porque las imágenes no existen hasta el primer
+# build en master (CHART-3 corre antes de build-trigger en el grafo del template).
+# El endurecimiento real ocurre en la rama promote/preprod-* vía
+# CHART_SCAN_ENFORCE=true — allí los jobs bloquean la promoción si hay findings
+# HIGH/CRITICAL.
+CHART-3-scan-images:
+  allow_failure: true
+  variables:
+    CHART_SCAN_INSECURE: "true"
+    TRIVY_INSECURE: "true"
+  before_script:
+    - |
+      mkdir -p /root/.docker
+      GL_AUTH=$(echo -n "gitlab-ci-token:${CI_JOB_TOKEN}" | base64 | tr -d '\n')
+      echo "{\"auths\":{\"registry.gitlab.telconet.ec\":{\"auth\":\"${GL_AUTH}\"}}}" > /root/.docker/config.json
+    # Fuera de promote/preprod-* las imágenes propias del stack aún no existen
+    # (se construyen tras el merge a master): se omiten aquí.
+    - |
+      if [ "${CHART_SCAN_ENFORCE:-false}" != "true" ]; then
+        OWN_RE='/txt-solca-lchai-[a-z-]+:'
+        grep -E "$OWN_RE" images.txt | sed 's/^/Omitida (se construye tras el merge, se escanea en promote\/preprod-*): /' || true
+        grep -vE "$OWN_RE" images.txt > images.filtered || true
+        mv images.filtered images.txt
+      fi
+
+# trivy 0.58.1 descarga el bundle de checks más reciente, que trae reglas que esa versión
+# no sabe parsear ([rego] errors); se usan los checks embebidos. El bundle ya descargado
+# vive en la caché compartida trivy-db y se usaría igual, por eso se borra.
+CHART-4-scan-config:
+  variables:
+    TRIVY_SKIP_CHECK_UPDATE: "true"
+  before_script:
+    - rm -rf "${TRIVY_CACHE_DIR}/policy"
+
+# El escaneo de secretos no usa la DB de vulnerabilidades: la caché trivy-db heredada
+# nunca se genera aquí y solo produce warnings "No files to cache".
+CHART-6-scan-secrets:
+  cache: []
+
+# Desactivar automerge del chart-scan (usamos merge-to-master custom)
+CHART-7-automerge:
+  rules:
+    - when: never
+
+# Override merge para conservar rama dev
+merge-to-master:
+  script:
+    - |
+      echo "Fusionando MR !${CI_MERGE_REQUEST_IID}..."
+      HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/merge_response.json --request PUT \
+        --header "PRIVATE-TOKEN: ${GITLAB_PUSH_TOKEN}" \
+        --header "Content-Type: application/json" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/merge" \
+        --data '{"should_remove_source_branch": false}')
+
+      if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+        STATE=$(sed -n 's/.*"state":"\([^"]*\)".*/\1/p' /tmp/merge_response.json | head -n 1 | tr -d '\r')
+        STATE="${STATE:-unknown}"
+        if [ "$STATE" = "merged" ]; then
+          echo "MR fusionado (rama dev conservada)."
+          sleep 5
+          RUNNING=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_PUSH_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines?ref=${CI_DEFAULT_BRANCH}&status=running&per_page=1" \
+            | grep -c '"id":' || echo 0)
+          if [ "$RUNNING" -eq 0 ]; then
+            curl -s --request POST --header "PRIVATE-TOKEN: ${GITLAB_PUSH_TOKEN}" \
+              "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipeline" \
+              --data "{\"ref\": \"${CI_DEFAULT_BRANCH}\"}" > /dev/null || true
+          fi
+        else
+          echo "Merge estado inesperado: ${STATE}"; cat /tmp/merge_response.json; exit 1
+        fi
+      else
+        echo "Merge fallido HTTP ${HTTP_CODE}:"; cat /tmp/merge_response.json; exit 1
+      fi
+
+notify:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: always
+
+# ── harbor-push: copia las imágenes recién construidas (GitLab registry) a Harbor ─
+# Pre-prod/prod corren artefactos verificados desde Harbor. Corre en el stage release,
+# o sea, después de build-trigger (build-push + sec:image-scan + sec:sbom en verde).
+# `buildx imagetools create` copia registry -> registry (manifest + capas) sin daemon
+# docker ni pull local: no le aplica el límite de 3GB del dso-size-guard y no hay que
+# bajar los ~8GB de inference-service. La imagen queda también en GitLab (failover).
+harbor-push:
+  stage: release
+  tags:
+    - procesos-cpu-runner
+  image: registry.gitlab.telconet.ec/docker/images/docker:27
+  needs:
+    - job: analyze
+      artifacts: true
+    - job: release
+  variables:
+    HARBOR_REGISTRY: harbor-llm.ai-dev.i.telconet.net
+    HARBOR_PROJECT: txt-solca
+    SRC_PREFIX: registry.gitlab.telconet.ec/docker/images/txt-solca-lchai
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+  script:
+    - |
+      if [ "$HAS_CHANGED_COMPONENTS" != "true" ] || [ -z "$NEW_VERSION_IMAGE" ] || [ "$NEW_VERSION_IMAGE" = "0.0.0" ]; then
+        echo "Sin release - nada que copiar a Harbor."; exit 0
+      fi
+      echo "$GITLAB_PUSH_TOKEN" | docker login registry.gitlab.telconet.ec -u gborbor --password-stdin
+      echo "$HARBOR_PASS" | docker login "$HARBOR_REGISTRY" -u "$HARBOR_USER" --password-stdin
+      for SVC in api-gateway case-service image-service inference-service ehr-service graph-service ontology-admin-service audit-service active-learning-service webapp; do
+        FLAG="CHANGED_$(echo "$SVC" | tr 'a-z-' 'A-Z_')"
+        eval "CHANGED=\${$FLAG:-false}"
+        [ "$CHANGED" = "true" ] || { echo "· $SVC sin cambios, se omite"; continue; }
+        SRC="${SRC_PREFIX}-${SVC}:${NEW_VERSION_IMAGE}"
+        DST="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/lchai-${SVC}:${NEW_VERSION_IMAGE}"
+        echo "→ $SRC  =>  $DST"
+        docker buildx imagetools create --tag "$DST" "$SRC"
+        docker buildx imagetools inspect "$DST" > /dev/null
+        echo "✔ $SVC en Harbor"
+      done
+
+# ── helm-push: empaqueta y sube el chart OCI al GitLab registry ──────────────
+helm-push:
+  stage: release
+  tags:
+    - pr-docker-validacion-build-2
+  image:
+    name: alpine/helm:3.17.3
+    entrypoint: [""]
+  needs:
+    - job: analyze
+      artifacts: true
+    - job: release
+    - job: harbor-push
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+  before_script:
+    - echo "$GITLAB_PUSH_TOKEN" | helm registry login "$CI_REGISTRY" --username "gborbor" --password-stdin
+  script:
+    - |
+      HELM_CHANGED=$(git diff --name-only HEAD~1..HEAD -- oncology-xai/infra/helm/ 2>/dev/null | wc -l || echo 0)
+      if [ "$HAS_CHANGED_COMPONENTS" = "true" ] && [ -n "$NEW_VERSION" ] && [ "$NEW_VERSION" != "0.0.0" ]; then
+        CHART_VERSION="${NEW_VERSION}"
+      elif [ "$HELM_CHANGED" -gt "0" ]; then
+        BASE=$(grep '^version:' oncology-xai/infra/helm/lchai/Chart.yaml | awk '{print $2}')
+        CHART_VERSION="$BASE"
+      else
+        echo "Sin release - skipping."; exit 0
+      fi
+      sed -i "s/^version:.*/version: ${CHART_VERSION}/" oncology-xai/infra/helm/lchai/Chart.yaml
+      sed -i "s/^appVersion:.*/appVersion: \"${CHART_VERSION}\"/" oncology-xai/infra/helm/lchai/Chart.yaml
+      helm package oncology-xai/infra/helm/lchai --version "${CHART_VERSION}"
+      helm push "lchai-${CHART_VERSION}.tgz" "oci://${CI_REGISTRY_IMAGE}/charts"
+
+# ── update-fleet: bumpea tags/chartVersion en fleet repo (solo preprod) ─────
+deploy:verify:
+  needs:
+    - job: update-fleet
+    - job: release
+      artifacts: true
+
+update-fleet:
+  stage: deploy
+  tags:
+    - pr-docker-validacion-build-2
+  image: alpine:3.20
+  needs:
+    - job: analyze
+      artifacts: true
+    - job: helm-push
+    - job: release
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+  before_script:
+    - apk add --no-cache git curl
+    - curl -sL "https://github.com/mikefarah/yq/releases/download/v4.44.2/yq_linux_amd64" -o /usr/local/bin/yq
+    - chmod +x /usr/local/bin/yq
+  script:
+    - |
+      HELM_CHANGED=$(git diff --name-only HEAD~1..HEAD -- oncology-xai/infra/helm/ 2>/dev/null | wc -l || echo 0)
+      if [ "$HAS_CHANGED_COMPONENTS" = "true" ] && [ -n "$NEW_VERSION" ] && [ "$NEW_VERSION" != "0.0.0" ]; then
+        CHART_VERSION="${NEW_VERSION}"; FULL_RELEASE="true"
+      elif [ "$HELM_CHANGED" -gt "0" ]; then
+        CHART_VERSION=$(grep '^version:' oncology-xai/infra/helm/lchai/Chart.yaml | awk '{print $2}'); FULL_RELEASE="false"
+      else
+        echo "Sin release - fleet sin cambios."; exit 0
+      fi
+      git clone "https://oauth2:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/procesos/ai-clusters/la-alice/general-applications/cicd/cd/fleet.git" /tmp/fleet
+      cd /tmp/fleet
+      git config user.email "ci@gitlab.telconet.ec"
+      git config user.name "agentic-pipeline"
+      FLEET_VALUES="stacks/txt/lchai/envs/preprod/values.yaml"
+      FLEET_ENV="stacks/txt/lchai/envs/preprod/env.yaml"
+      if [ "$FULL_RELEASE" = "true" ]; then
+        # Las imágenes de la app viven en Harbor (job harbor-push). Las deps/* siguen en GitLab (regcred). Un imagePullSecrets en el pod REEMPLAZA al de la ServiceAccount, por eso van los dos.
+        yq -i '.image.registry = "harbor-llm.ai-dev.i.telconet.net" | .image.prefix = "txt-solca/lchai" | .image.separator = "-" | .image.pullSecrets = ["regcred", "harbor-pull-secret"]' "$FLEET_VALUES"
+        for SVC in api-gateway case-service image-service inference-service ehr-service graph-service ontology-admin-service audit-service active-learning-service webapp; do
+          FLAG="CHANGED_$(echo "$SVC" | tr 'a-z-' 'A-Z_')"
+          if [ "$(eval echo \$$FLAG)" = "true" ]; then
+            yq -i ".image.tags.\"${SVC}\" = \"${CHART_VERSION}\"" "$FLEET_VALUES"
+          fi
+        done
+      fi
+      yq -i ".chartVersion = \"${CHART_VERSION}\"" "$FLEET_ENV"
+      git add stacks/txt/lchai/
+      git diff --cached --quiet || git commit -m "chore(txt/lchai): bump preprod to ${CHART_VERSION}"
+      git push origin master
