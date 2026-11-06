@@ -123,6 +123,10 @@ inferenceWorker:
   maxTilesWsi: 20000
   # Lista de backbones a descargar (ej. "ctranspath.pth,best_fuzzyarcloss_v2.pth"). Vacío = todos
   modelFiles: ""
+  # Hilos de PyTorch/OpenMP/MKL del worker. "" = se calcula del limits.cpu (redondeado hacia arriba, minimo 1).
+  # Sin esto, en nodos de muchos cores (ej. 448) PyTorch crea un hilo por CPU del nodo (224) y compiten por la
+  # cuota CFS del pod: el pre-procesado de tiles se arrastra y la GPU queda ociosa.
+  threads: ""
   resources:
     requests: { cpu: "2", memory: 4Gi }
     limits: { cpu: "4", memory: 8Gi }
