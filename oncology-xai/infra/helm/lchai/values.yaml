@@ -184,7 +184,7 @@ localDeps:
   redis:
     image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/redis:7-alpine
   s3:
-    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/seaweedfs:4.51-r1
+    image: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/seaweedfs:4.52
     awsCliImage: registry.gitlab.telconet.ec/procesos/devops/deploys/txt/solca/lchai/deps/aws-cli:2.39.2
     storage: 20Gi
     host: ""          # host público para las URL firmadas (ingress)
