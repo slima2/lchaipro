@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from oncology_common.authz import require_case_access
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -211,11 +212,14 @@ def _require_uuid(case_id: str) -> str:
 @router.get("/cases/{case_id}/graph")
 async def get_graph(
     case_id: str,
+    request: Request,
     depth: int = Query(2, ge=1, le=5),
     include_inferred: bool = Query(True, alias="includeInferred"),
     db: AsyncSession = Depends(get_db),
 ):
     case_id = _require_uuid(case_id)
+    # F6.5 — ownership del caso antes de servir su grafo
+    await require_case_access(db, request, case_id)
     """Get graph for a case (from latest snapshot or live SPARQL)."""
     # Try latest snapshot
     stmt = (
@@ -267,10 +271,12 @@ async def get_graph(
 @router.post("/cases/{case_id}/graph:rebuild", status_code=201)
 async def rebuild_graph(
     case_id: str,
+    request: Request,
     from_ontology: bool = Query(True, alias="fromOntology"),
     db: AsyncSession = Depends(get_db),
 ):
     case_id = _require_uuid(case_id)
+    await require_case_access(db, request, case_id)
     """Rebuild graph snapshot from case results + discovered relations. Dynamic case-specific graph."""
     # Fetch real results for this case
     pattern_results, genetic_results = await _fetch_case_results(db, case_id)
@@ -320,11 +326,13 @@ async def rebuild_graph(
 @router.post("/cases/{case_id}/graph/explain")
 async def explain_graph(
     case_id: str,
+    request: Request,
     body: dict | None = None,
     include_inferred: bool = Query(True, alias="includeInferred"),
     db: AsyncSession = Depends(get_db),
 ):
     case_id = _require_uuid(case_id)
+    await require_case_access(db, request, case_id)
     """Generate natural language explanation of the case graph via LLM."""
     language = (body or {}).get("language", "en")
     # Fetch graph (same logic as get_graph)
@@ -365,10 +373,16 @@ async def explain_graph(
 
 
 @router.get("/graphs/{graph_snapshot_id}")
-async def get_snapshot(graph_snapshot_id: str, db: AsyncSession = Depends(get_db)):
+async def get_snapshot(
+    graph_snapshot_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     snap = await db.get(CaseGraphSnapshotDB, graph_snapshot_id)
     if not snap:
         raise HTTPException(status_code=404, detail="Graph snapshot not found")
+    # F6.5 — ownership por el caso del snapshot
+    await require_case_access(db, request, snap.case_id)
     return {
         "graph_snapshot_id": snap.id,
         "case_id": snap.case_id,

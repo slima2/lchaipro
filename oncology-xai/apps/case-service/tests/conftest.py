@@ -56,6 +56,13 @@ async def client(
 ) -> AsyncIterator[AsyncClient]:
     # Mock del publisher: no queremos RabbitMQ real en tests
     monkeypatch.setattr(routes, "_publish_audit", lambda *a, **k: None)
+    # F6.5 — mock del storage cleanup: tests no tienen S3 real.
+    # Devuelve la misma shape que la función real (ok + 0 objetos).
+    monkeypatch.setattr(
+        routes,
+        "_cleanup_case_storage",
+        lambda case_id: {"storage_deleted": 0, "storage_cleanup_ok": True},
+    )
 
     async def _override() -> AsyncIterator[AsyncSession]:
         yield async_session

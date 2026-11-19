@@ -77,9 +77,9 @@ from app.database import get_db  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 
 
-# El inference-service no define ImageDB; solo lo consulta vía SQL.
-# Para los tests declaramos la tabla "images" en el mismo metadata para
-# que SQLAlchemy la cree junto con el resto.
+# El inference-service no define ImageDB ni CaseDB; solo las consulta via
+# SQL. Para los tests las declaramos en el mismo metadata para que
+# SQLAlchemy las cree junto con el resto.
 class _ImageStub(Base):
     __tablename__ = "images"
     id = Column(String(36), primary_key=True)
@@ -90,6 +90,17 @@ class _ImageStub(Base):
     size_bytes = Column(Integer, nullable=False, default=0)
     uploaded_by = Column(String(255), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class _CaseStub(Base):
+    """Stub mínimo de ``cases`` para que ``require_case_access`` tenga
+    sobre qué consultar en los tests de ownership (F6.5)."""
+
+    __tablename__ = "cases"
+    id = Column(String(36), primary_key=True)
+    patient_id = Column(String(36), nullable=True)
+    created_by = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
 
 @pytest.fixture
@@ -128,14 +139,53 @@ async def client(
     fastapi_app.dependency_overrides.clear()
 
 
+async def seed_case(
+    session: AsyncSession,
+    *,
+    case_id: str,
+    created_by: str = "clinicianA",
+    deleted: bool = False,
+) -> None:
+    """Crea una row en ``cases`` para los ownership checks de F6.5."""
+    await session.execute(
+        text(
+            "INSERT INTO cases (id, patient_id, created_by, deleted_at) "
+            "VALUES (:id, 'p1', :by, :del)"
+        ),
+        {
+            "id": case_id,
+            "by": created_by,
+            "del": "2026-11-19 00:00:00" if deleted else None,
+        },
+    )
+    await session.commit()
+
+
 async def seed_image(
     session: AsyncSession,
     *,
     image_id: str,
     case_id: str,
     confirmed: bool = True,
-    uploaded_by: str = "clinician1",
+    uploaded_by: str = "clinicianA",
+    with_case: bool = True,
+    case_created_by: str = "clinicianA",
 ) -> None:
+    """Inserta una imagen; por defecto también inserta su caso para que
+    ``require_case_access`` tenga una row sobre la cual decidir."""
+    if with_case:
+        # idempotente: SQLite no soporta ``ON CONFLICT`` sin schema,
+        # chequeamos a mano.
+        exists = (
+            await session.execute(
+                text("SELECT 1 FROM cases WHERE id = :c"), {"c": case_id}
+            )
+        ).fetchone()
+        if not exists:
+            await seed_case(
+                session, case_id=case_id, created_by=case_created_by
+            )
+
     checksum = "deadbeef" if confirmed else "pending-upload"
     await session.execute(
         text(

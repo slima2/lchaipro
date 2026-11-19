@@ -60,14 +60,15 @@ async def test_process_image_uses_server_side_case_id(
     async_session: AsyncSession,
     dispatched_calls: list,
 ) -> None:
-    """Aunque el body traiga un case_id ajeno, el job se crea con el
-    case_id REAL de la imagen."""
+    """Aunque el body traiga un ``case_id`` ajeno, el job se crea con el
+    ``case_id`` REAL de la imagen (resuelto server-side)."""
     img = str(uuid4())
+    # clinician A es el dueño del caso y del flujo
     await seed_image(async_session, image_id=img, case_id="caseA")
     forged = "case-of-another-clinician"
     r = await client.post(
         f"/api/v1/images/{img}:process",
-        headers=_B,
+        headers=_A,
         json={"case_id": forged, "thresholds": {"pattern": 0.0}},
     )
     assert r.status_code == 202, r.text
@@ -82,7 +83,7 @@ async def test_process_image_uses_server_side_case_id(
         )
     ).scalar_one()
     assert job.case_id == "caseA"
-    assert job.created_by == "clinicianB"
+    assert job.created_by == "clinicianA"
 
     # Thresholds del body se descartan: la Celery task recibe None
     assert len(dispatched_calls) == 1

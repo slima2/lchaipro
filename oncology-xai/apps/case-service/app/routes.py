@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from event_contracts.envelope import EventEnvelope
 from event_contracts.publisher import EventPublisher
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -70,6 +70,117 @@ def _publish_audit(event_type: str, entity_id: str, payload: dict[str, Any]) -> 
         )
     except Exception:
         logger.warning("Failed to publish audit event %s", event_type, exc_info=True)
+
+
+# ── F6.5 — Saga de case.deleted: limpiar derivados fuera de "cases" ────
+
+
+async def _cleanup_case_derivatives(
+    db: AsyncSession, case_id: str, actor: str, reason: str, now
+) -> dict[str, int | bool | str]:
+    """Cascada best-effort tras soft-delete de un caso.
+
+    1. Marca sus **imagenes** como soft-deleted (ocultas en GETs).
+    2. **Borra** los snapshots del grafo del caso (derivados, re-generables).
+    3. Borra los objetos **S3** bajo ``images/{cid}/`` y ``results/{cid}/``
+       vía ``StorageClient.delete_by_prefix`` — sincrónico pero best-effort:
+       si falla se loguea y se emite ``case.storage-cleanup-failed`` para que
+       un worker reintente, sin bloquear el soft-delete en DB.
+
+    Retorna métricas para la auditoría del `case.deleted`.
+    """
+    stats: dict[str, int | bool | str] = {
+        "images_soft_deleted": 0,
+        "graph_snapshots_deleted": 0,
+        "storage_deleted": 0,
+        "storage_cleanup_ok": True,
+    }
+
+    # Imágenes — mismas conexión y transacción que el case.
+    # La tabla ``images`` vive en otro servicio y puede no existir en
+    # entornos de test que solo importan los modelos de case-service; en
+    # ese caso se degrada silenciosamente para no romper el soft-delete.
+    try:
+        res = await db.execute(
+            text(
+                "UPDATE images SET deleted_at = :ts, deleted_by = :by, "
+                "delete_reason = :why "
+                "WHERE case_id = :cid AND deleted_at IS NULL"
+            ),
+            {
+                "ts": now,
+                "by": actor,
+                "why": f"cascade from case.deleted: {reason}",
+                "cid": case_id,
+            },
+        )
+        stats["images_soft_deleted"] = res.rowcount or 0
+    except Exception:
+        logger.debug("images cleanup skipped (table missing?)", exc_info=True)
+
+    # Graph snapshots — se regeneran, no se conservan tras el delete
+    try:
+        res = await db.execute(
+            text("DELETE FROM case_graph_snapshots WHERE case_id = :cid"),
+            {"cid": case_id},
+        )
+        stats["graph_snapshots_deleted"] = res.rowcount or 0
+    except Exception:
+        logger.debug(
+            "case_graph_snapshots cleanup skipped (table missing?)",
+            exc_info=True,
+        )
+
+    # S3 — best-effort, fuera de la transacción conceptual; no re-raise
+    stats.update(_cleanup_case_storage(case_id))
+    return stats
+
+
+def _cleanup_case_storage(case_id: str) -> dict[str, int | bool | str]:
+    """Borrar prefijos S3 del caso. Devuelve métricas para auditoría."""
+    if not (settings.s3_endpoint and settings.s3_bucket and settings.s3_access_key):
+        logger.warning(
+            "S3 cleanup skipped for case %s: storage not configured", case_id
+        )
+        return {
+            "storage_deleted": 0,
+            "storage_cleanup_ok": False,
+            "storage_cleanup_reason": "not-configured",
+        }
+
+    try:
+        from oncology_common.storage import (
+            StorageClient,  # import local: evita boto3 en tests mínimos
+        )
+
+        storage = StorageClient(
+            endpoint=settings.s3_endpoint,
+            access_key=settings.s3_access_key or "",
+            secret_key=settings.s3_secret_key or "",
+            bucket=settings.s3_bucket,
+        )
+        total = 0
+        for prefix in (f"images/{case_id}/", f"results/{case_id}/"):
+            total += storage.delete_by_prefix(prefix)
+        return {"storage_deleted": total, "storage_cleanup_ok": True}
+    except Exception as exc:
+        logger.error("S3 cleanup failed for case %s: %s", case_id, exc, exc_info=True)
+        # Emite evento para que un reaper lo reintente; NO re-raise:
+        # queremos que el soft-delete en DB persista.
+        _publish_audit(
+            "case.storage-cleanup-failed",
+            case_id,
+            {
+                "case_id": case_id,
+                "error": str(exc),
+                "action": "case.storage-cleanup-failed",
+            },
+        )
+        return {
+            "storage_deleted": 0,
+            "storage_cleanup_ok": False,
+            "storage_cleanup_reason": str(exc)[:200],
+        }
 
 
 # ── Patients ───────────────────────────────────────────────────────────
@@ -145,7 +256,7 @@ async def delete_patient(
     if not patient or patient.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Soft-delete en cascada de casos activos del paciente (misma transacción)
     case_rows = await db.execute(
@@ -154,10 +265,15 @@ async def delete_patient(
         )
     )
     cases = list(case_rows.scalars().all())
+    cascade_stats: dict[str, dict] = {}
     for c in cases:
         c.deleted_at = now
         c.deleted_by = actor
         c.delete_reason = f"cascade from patient.deleted: {reason}"
+        # F6.5 — cada caso arrastra sus imágenes, snapshots y S3
+        cascade_stats[c.id] = await _cleanup_case_derivatives(
+            db, c.id, actor, reason, now
+        )
 
     patient.deleted_at = now
     patient.deleted_by = actor
@@ -185,6 +301,7 @@ async def delete_patient(
                 "soft_delete": True,
                 "cascade_from": "patient",
                 "action": "case.deleted",
+                **cascade_stats.get(c.id, {}),
             },
         )
     _publish_audit(
@@ -293,14 +410,20 @@ async def delete_case(
     if not case or case.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     case.deleted_at = now
     case.deleted_by = actor
     case.delete_reason = reason
+    # F6.5 — cascada de imágenes, snapshots y objetos S3 del caso
+    cascade_stats = await _cleanup_case_derivatives(db, case_id, actor, reason, now)
     await db.commit()
 
     logger.info(
-        "Soft-deleted case %s by %s (reason=%r)", case_id, actor, reason
+        "Soft-deleted case %s by %s (reason=%r); cascade=%s",
+        case_id,
+        actor,
+        reason,
+        cascade_stats,
     )
     _publish_audit(
         "case.deleted",
@@ -312,6 +435,7 @@ async def delete_case(
             "reason": reason,
             "soft_delete": True,
             "action": "case.deleted",
+            **cascade_stats,
         },
     )
     return {
@@ -319,6 +443,7 @@ async def delete_case(
         "soft_deleted": True,
         "deleted_by": actor,
         "deleted_at": now.isoformat(),
+        **cascade_stats,
     }
 
 

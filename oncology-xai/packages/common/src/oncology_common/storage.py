@@ -132,6 +132,40 @@ class StorageClient:
         """Return metadata for an object (size, etag, etc). Raises if not found."""
         return self._client.head_object(Bucket=self.bucket, Key=key)
 
+    # ── delete ──────────────────────────────────────────────────────────
+    def delete_by_prefix(self, prefix: str) -> int:
+        """Delete every object under ``prefix``. Returns the count.
+
+        Usada por la saga de ``case.deleted`` (F6.5) para limpiar los
+        objetos clínicos de un caso (prefijos ``images/{cid}/`` y
+        ``results/{cid}/``) y evitar que queden accesibles por URL
+        presigned después del soft-delete.
+
+        El prefijo debe terminar en ``/`` y contener al menos un
+        segmento: no se permite borrar la raíz del bucket por accidente.
+        """
+        if not prefix or not prefix.endswith("/") or prefix.startswith("/"):
+            raise ValueError(f"Unsafe prefix for bulk delete: {prefix!r}")
+        if "/" not in prefix.rstrip("/"):
+            raise ValueError(
+                f"Prefix must contain at least one path segment: {prefix!r}"
+            )
+
+        paginator = self._client.get_paginator("list_objects_v2")
+        total = 0
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            objs = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+            if not objs:
+                continue
+            # S3 delete_objects acepta hasta 1000 keys por llamada.
+            for i in range(0, len(objs), 1000):
+                chunk = objs[i : i + 1000]
+                self._client.delete_objects(
+                    Bucket=self.bucket, Delete={"Objects": chunk, "Quiet": True}
+                )
+                total += len(chunk)
+        return total
+
     def download_range(self, key: str, start: int, end: int) -> bytes:
         """Download a byte range of an object (for partial reads like H&E validation)."""
         resp = self._client.get_object(

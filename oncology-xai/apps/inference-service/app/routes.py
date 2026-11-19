@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from oncology_common.authz import require_case_access
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -43,9 +44,7 @@ def _is_admin(request: Request) -> bool:
 # ── Image lookup (server-side, no confiar en el body) ───────────────────
 
 
-async def _load_confirmed_image(
-    db: AsyncSession, image_id: str
-) -> tuple[str, str]:
+async def _load_confirmed_image(db: AsyncSession, image_id: str) -> tuple[str, str]:
     """Resuelve ``(case_id, storage_uri)`` desde la tabla ``images``.
 
     Exige que la imagen exista y esté *confirmada* (``checksum`` distinto
@@ -57,10 +56,7 @@ async def _load_confirmed_image(
     """
     row = (
         await db.execute(
-            text(
-                "SELECT case_id, checksum, storage_uri "
-                "FROM images WHERE id = :id"
-            ),
+            text("SELECT case_id, checksum, storage_uri FROM images WHERE id = :id"),
             {"id": image_id},
         )
     ).fetchone()
@@ -108,6 +104,11 @@ async def process_image(
             _actor(request),
         )
 
+    # F6.5 — además de resolver, verificar que el caller tiene acceso al
+    # caso. Sin esto, cualquier clinician que conozca un image_id de otro
+    # podía dispararle jobs de inferencia.
+    await require_case_access(db, request, real_case_id)
+
     # F6.4 — thresholds del usuario no se propagan al pipeline.
     # El worker usa los defaults de settings. Si el body venía con
     # ``thresholds``, se descarta silenciosamente (no romper la API
@@ -145,9 +146,7 @@ async def process_image(
 
 
 @router.post("/jobs/{job_id}:cancel")
-async def cancel_job(
-    job_id: str, request: Request, db: AsyncSession = Depends(get_db)
-):
+async def cancel_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Cancel a running job.
 
     * Ownership (pentest §6.1): solo el creador del job o un ``admin``
@@ -188,7 +187,7 @@ async def cancel_job(
             )  # antes se ignoraba en silencio (Bandit S110)
 
     job.status = "CANCELLED"
-    job.ended_at = datetime.now(timezone.utc)
+    job.ended_at = datetime.now(UTC)
     await db.commit()
 
     logger.info(
@@ -203,11 +202,17 @@ async def cancel_job(
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    """Poll job status."""
+async def get_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Poll job status.
+
+    F6.5 — exige que el caller tenga acceso al caso del job, no solo que
+    conozca el ``job_id``.
+    """
     job = await db.get(MLJobDB, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.case_id:
+        await require_case_access(db, request, job.case_id)
     return {
         "job_id": job.id,
         "image_id": job.image_id,
@@ -224,8 +229,18 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/images/{image_id}/results/latest")
-async def get_latest_results(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Get latest ResultBundle for an image."""
+async def get_latest_results(
+    image_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Get latest ResultBundle for an image.
+
+    F6.5 — ownership por caso de la imagen. Un clinician no puede
+    enumerar resultados de imágenes ajenas conociendo el ``image_id``.
+    """
+    # Resolver case_id desde la imagen y validar acceso
+    img_case_id, _ = await _load_confirmed_image(db, image_id)
+    await require_case_access(db, request, img_case_id)
+
     stmt = (
         select(ResultBundleDB)
         .where(ResultBundleDB.image_id == image_id)
@@ -246,7 +261,11 @@ async def get_latest_results(image_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/results/{result_bundle_id}")
-async def get_result_bundle(result_bundle_id: str, db: AsyncSession = Depends(get_db)):
+async def get_result_bundle(
+    result_bundle_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(ResultBundleDB)
         .where(ResultBundleDB.id == result_bundle_id)
@@ -261,11 +280,28 @@ async def get_result_bundle(result_bundle_id: str, db: AsyncSession = Depends(ge
     bundle = result.scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Result bundle not found")
+    # F6.5 — ownership por el caso del bundle
+    await require_case_access(db, request, bundle.case_id)
     return _bundle_dict(bundle)
 
 
 @router.get("/results/{result_bundle_id}/artifacts")
-async def get_artifacts(result_bundle_id: str, db: AsyncSession = Depends(get_db)):
+async def get_artifacts(
+    result_bundle_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    # Primero resolver el case_id del bundle para el ownership check.
+    row = (
+        await db.execute(
+            text("SELECT case_id FROM result_bundles WHERE id = :rid"),
+            {"rid": result_bundle_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Result bundle not found")
+    await require_case_access(db, request, row[0])
+
     stmt = select(XAIArtifactDB).where(
         XAIArtifactDB.result_bundle_id == result_bundle_id
     )

@@ -21,6 +21,11 @@ from fastapi import (
     status,
 )
 from fastapi.responses import Response
+from oncology_common.authz import (
+    InvalidArtifactKey,
+    case_id_from_key,
+    require_case_access,
+)
 from oncology_common.storage import StorageClient
 from PIL import Image as PILImage
 from sqlalchemy import select
@@ -157,6 +162,8 @@ async def upload_image(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload histopathological image. Supported: png, jpg, jpeg, tif, tiff, svs, bif, biff."""
+    # F6.5 — un clinician solo puede subir imágenes a casos propios
+    await require_case_access(db, request, case_id)
     uploaded_by = request.headers.get("x-user-id", "unknown")
     data = await file.read()
     ext = (file.filename or "image.png").rsplit(".", 1)[-1].lower()
@@ -228,6 +235,8 @@ async def request_upload(
 
     Body: { "filename": "slide.svs", "size_bytes": 10000000000 }
     """
+    # F6.5 — ownership del caso antes de generar presigned S3
+    await require_case_access(db, request, case_id)
     filename = body.get("filename", "image.png")
     size_bytes = body.get("size_bytes", 0)
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
@@ -294,12 +303,16 @@ async def request_upload(
     "/cases/{case_id}/images:complete-multipart", status_code=status.HTTP_200_OK
 )
 async def complete_multipart(
-    case_id: str, body: dict, db: AsyncSession = Depends(get_db)
+    case_id: str,
+    body: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
     """Complete a multipart upload after all parts have been uploaded.
 
     Body: { "image_id": "uuid", "upload_id": "...", "parts": [{"ETag": "...", "PartNumber": 1}, ...] }
     """
+    await require_case_access(db, request, case_id)
     image_id = body.get("image_id")
     upload_id = body.get("upload_id")
     parts = body.get("parts", [])
@@ -344,11 +357,17 @@ async def complete_multipart(
 
 
 @router.post("/cases/{case_id}/images:confirm-upload", status_code=status.HTTP_200_OK)
-async def confirm_upload(case_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+async def confirm_upload(
+    case_id: str,
+    body: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     """Confirm that a presigned upload completed. Verifies the object exists in S3.
 
     Body: { "image_id": "uuid" }
     """
+    await require_case_access(db, request, case_id)
     image_id = body.get("image_id")
     if not image_id:
         raise HTTPException(status_code=400, detail="image_id is required")
@@ -385,24 +404,38 @@ async def confirm_upload(case_id: str, body: dict, db: AsyncSession = Depends(ge
 
 
 @router.get("/cases/{case_id}/images")
-async def list_images(case_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ImageDB).where(ImageDB.case_id == case_id))
+async def list_images(
+    case_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    await require_case_access(db, request, case_id)
+    # F6.5 — ocultar imágenes soft-deleted
+    result = await db.execute(
+        select(ImageDB).where(ImageDB.case_id == case_id, ImageDB.deleted_at.is_(None))
+    )
     return [_img_dict(i) for i in result.scalars().all()]
 
 
 @router.get("/images/{image_id}")
-async def get_image(image_id: str, db: AsyncSession = Depends(get_db)):
+async def get_image(
+    image_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
     img = await db.get(ImageDB, image_id)
-    if not img:
+    if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Image not found")
+    # F6.5 — ownership por el caso de la imagen
+    await require_case_access(db, request, img.case_id)
     return _img_dict(img)
 
 
 @router.get("/images/{image_id}/viewer-url")
-async def get_viewer_url(image_id: str, db: AsyncSession = Depends(get_db)):
+async def get_viewer_url(
+    image_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
     img = await db.get(ImageDB, image_id)
-    if not img:
+    if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Image not found")
+    # F6.5 — ownership antes de firmar una URL con lectura S3
+    await require_case_access(db, request, img.case_id)
     storage = _storage()
     key = img.storage_uri.replace(f"s3://{settings.s3_bucket}/", "")
     url = storage.presigned_url(key, expires_in=3600)
@@ -410,8 +443,32 @@ async def get_viewer_url(image_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/artifacts/presigned")
-async def get_artifact_presigned(key: str = Query(...)):
-    """Return artifact bytes from MinIO (proxy). Used by frontend <img> tags."""
+async def get_artifact_presigned(
+    request: Request,
+    key: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return artifact bytes from MinIO (proxy). Used by frontend <img> tags.
+
+    F6.5 — la key DEBE empezar por un prefijo conocido y contener el
+    ``case_id`` del artifact (``images/<cid>/..`` o ``results/<cid>/..``).
+    Se valida que:
+
+    1. El formato de la key sea seguro (sin ``..``, slashes iniciales,
+       etc.) → 400.
+    2. El caller tenga acceso al ``case_id`` extraído → 403.
+    3. El caso no esté soft-deleted → 404 (coherente con el resto).
+
+    Antes bastaba con conocer la key (p.ej. logs, response de otro user)
+    para leer el objeto: eso rompía el BOLA del caso vecino.
+    """
+    try:
+        key_case_id = case_id_from_key(key)
+    except InvalidArtifactKey as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await require_case_access(db, request, key_case_id)
+
     storage = _storage()
     try:
         data = storage.download_bytes(key)
