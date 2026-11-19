@@ -3,64 +3,179 @@
 from __future__ import annotations
 
 import logging
-
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
 from app.models import MLJobDB, ResultBundleDB, XAIArtifactDB
-from app.tasks import process_image_task
+
+# Nota: ``process_image_task`` se importa lazy (dentro de :process) para que
+# los tests y los endpoints de solo-lectura no carguen torch / openslide.
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Inference"])
 
 
+# ── Identity helpers (F6.1 / F6.5) ──────────────────────────────────────
+
+
+def _actor(request: Request) -> str:
+    return request.headers.get("x-user-id", "unknown")
+
+
+def _roles(request: Request) -> set[str]:
+    raw = request.headers.get("x-roles", "")
+    return {r.strip() for r in raw.split(",") if r.strip()}
+
+
+def _is_admin(request: Request) -> bool:
+    return "admin" in _roles(request)
+
+
+# ── Image lookup (server-side, no confiar en el body) ───────────────────
+
+
+async def _load_confirmed_image(
+    db: AsyncSession, image_id: str
+) -> tuple[str, str]:
+    """Resuelve ``(case_id, storage_uri)`` desde la tabla ``images``.
+
+    Exige que la imagen exista y esté *confirmada* (``checksum`` distinto
+    del placeholder ``"pending-upload"`` que deja ``request_upload``). Así
+    cerramos el escenario del pentest §6.1: un clinician inyectaba
+    ``case_id`` ajeno en el body y procesaba una imagen con UUID
+    inventado (``00000000-0000-0000-0000-0000000000a1``) para disparar
+    la cascada destructiva al cancelar.
+    """
+    row = (
+        await db.execute(
+            text(
+                "SELECT case_id, checksum, storage_uri "
+                "FROM images WHERE id = :id"
+            ),
+            {"id": image_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Image not found")
+    case_id, checksum, storage_uri = row
+    if not checksum or checksum == "pending-upload":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Image upload not confirmed yet. "
+                "Call /cases/{case_id}/images:confirm-upload first."
+            ),
+        )
+    return case_id, storage_uri
+
+
 @router.post("/images/{image_id}:process", status_code=status.HTTP_202_ACCEPTED)
 async def process_image(
     image_id: str,
+    request: Request,
     body: dict[str, Any] | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Start async inference job (DERCAS UC-IMG-02)."""
+    """Start async inference job (DERCAS UC-IMG-02).
+
+    * Resuelve ``case_id`` desde la imagen en DB — el cliente ya no puede
+      inyectarlo (pentest §6.1 / §6.4). Si el body lo trae y no coincide
+      con el real, se registra un warning y se usa el de la DB.
+    * Rechaza imágenes inexistentes o sin confirmar.
+    * Los ``thresholds`` del body se ignoran: usar siempre los presets
+      del backend (pentest §6.4 — ``pattern=0.0`` hacía todo "concluyente").
+    """
     body = body or {}
-    case_id = body.get("case_id", "unknown")
-    thresholds = body.get("thresholds")
+
+    # F6.1 — resolver case_id server-side. Si el body trae uno distinto,
+    # loguear para forense (intento de BOLA), pero seguir con el real.
+    real_case_id, _ = await _load_confirmed_image(db, image_id)
+    claimed = body.get("case_id")
+    if claimed and claimed != real_case_id:
+        logger.warning(
+            "process_image: body.case_id=%r != image.case_id=%r (user=%s)",
+            claimed,
+            real_case_id,
+            _actor(request),
+        )
+
+    # F6.4 — thresholds del usuario no se propagan al pipeline.
+    # El worker usa los defaults de settings. Si el body venía con
+    # ``thresholds``, se descarta silenciosamente (no romper la API
+    # pero ignorar el input).
+    if "thresholds" in body:
+        logger.info(
+            "process_image: ignoring client-supplied thresholds (user=%s)",
+            _actor(request),
+        )
 
     job_id = str(uuid4())
     job = MLJobDB(
         id=job_id,
-        case_id=case_id,
+        case_id=real_case_id,
         image_id=image_id,
         job_type="IMAGE_INFERENCE",
         status="PENDING",
+        created_by=_actor(request),
     )
     db.add(job)
     await db.commit()
 
-    # Dispatch Celery task
-    process_image_task.delay(job_id, image_id, case_id, thresholds)
+    # Dispatch Celery task — thresholds=None fuerza defaults en el worker.
+    from app.tasks import process_image_task  # lazy: evita torch en boot
+
+    process_image_task.delay(job_id, image_id, real_case_id, None)
 
     return {
         "job_id": job_id,
         "image_id": image_id,
+        "case_id": real_case_id,
         "status": "PENDING",
         "message": "Inference job queued",
     }
 
 
 @router.post("/jobs/{job_id}:cancel")
-async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    """Cancel a running job and clean up its case data."""
+async def cancel_job(
+    job_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Cancel a running job.
+
+    * Ownership (pentest §6.1): solo el creador del job o un ``admin``
+      pueden cancelarlo. Otro clinician → 403.
+    * **Ya NO ejecuta cascada destructiva** sobre el caso. La cancelación
+      marca el job como ``CANCELLED`` y revoca la tarea Celery.
+      Para borrar un caso hay que llamar al endpoint admin-only
+      ``DELETE /cases/{id}`` (soft-delete, F6.2).
+    """
     job = await db.get(MLJobDB, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    actor = _actor(request)
+    if job.created_by and job.created_by != actor and not _is_admin(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the job creator or an admin can cancel this job",
+        )
+
+    if job.status in ("COMPLETED", "FAILED", "CANCELLED"):
+        # Idempotente para jobs ya terminados.
+        return {
+            "status": job.status.lower(),
+            "job_id": job_id,
+            "case_id": job.case_id,
+            "cleaned": False,
+        }
 
     if job.celery_task_id:
         try:
@@ -73,49 +188,17 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
             )  # antes se ignoraba en silencio (Bandit S110)
 
     job.status = "CANCELLED"
+    job.ended_at = datetime.now(timezone.utc)
     await db.commit()
 
-    from sqlalchemy import text
-
-    case_id = job.case_id
-
-    await db.execute(
-        text(
-            "DELETE FROM xai_artifacts WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
+    logger.info(
+        "Cancelled job %s by %s (case_id=%s) — no cascade", job_id, actor, job.case_id
     )
-    await db.execute(
-        text(
-            "DELETE FROM genetic_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text(
-            "DELETE FROM pattern_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text(
-            "DELETE FROM morphologic_profiles WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text("DELETE FROM result_bundles WHERE case_id = :cid"), {"cid": case_id}
-    )
-    await db.execute(text("DELETE FROM ml_jobs WHERE case_id = :cid"), {"cid": case_id})
-    await db.execute(text("DELETE FROM images WHERE case_id = :cid"), {"cid": case_id})
-    await db.execute(text("DELETE FROM cases WHERE id = :cid"), {"cid": case_id})
-    await db.commit()
-
     return {
         "status": "cancelled",
         "job_id": job_id,
-        "case_id": case_id,
-        "cleaned": True,
+        "case_id": job.case_id,
+        "cleaned": False,  # mantener la clave por compat; pero ahora SIEMPRE false
     }
 
 

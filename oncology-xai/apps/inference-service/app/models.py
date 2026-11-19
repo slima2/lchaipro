@@ -25,6 +25,9 @@ class MLJobDB(Base):
     error_detail: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # F6.1 — ownership del job (quién lanzó el :process). Usado por
+    # cancel_job para que un clinician no pueda cancelar jobs de otro.
+    created_by: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
