@@ -25,6 +25,13 @@ class PatientDB(Base):
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=datetime.utcnow
     )
+    # F6.2 — soft-delete con motivo y actor (admin). El borrado físico queda
+    # reservado a tareas de retención controladas, no a la API.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
 
 class CaseDB(Base):
@@ -48,3 +55,9 @@ class CaseDB(Base):
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), onupdate=datetime.utcnow
     )
+    # F6.2 — ver PatientDB
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
