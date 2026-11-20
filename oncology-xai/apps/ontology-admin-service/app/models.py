@@ -134,7 +134,18 @@ class DiscoveredRelationDB(Base):
     paper_title: Mapped[str | None] = mapped_column(Text)
     paper_url: Mapped[str | None] = mapped_column(String(500))
     confidence: Mapped[str] = mapped_column(String(20), default="medium")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # F6.6 — aprobación humana requerida antes de que graph-service /
+    # LLM prompts consuman la relación. El default pasa de ``True``
+    # (activa automática) a ``False``: la DB conserva la relación como
+    # "descubierta" pero ``is_active=False`` hasta que un admin la aprueba.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # F6.6 — rollback real: un rollback de proposal / override manual
+    # desactiva la relación aquí y deja la marca con usuario y motivo.
+    rolled_back_by: Mapped[str | None] = mapped_column(String(255))
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rollback_reason: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

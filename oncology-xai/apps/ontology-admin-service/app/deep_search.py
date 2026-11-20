@@ -163,8 +163,63 @@ def deduplicate(relations: list[dict]) -> list[dict]:
     return result
 
 
+def _normalize(s: str) -> str:
+    """Normaliza para comparación tolerante de evidencia."""
+    return "".join(ch for ch in (s or "").lower() if ch.isalnum() or ch == " ")
+
+
+def evidence_supports_relation(rel: dict) -> bool:
+    """F6.6 — verificar que el ``evidence_quote`` mencione realmente al
+    subject y al object de la relación.
+
+    El pentest §6.6 mostró que ``validate_relations`` sólo chequeaba la
+    *forma* (tipos SHACL) y el link a IRIs, pero aceptaba cualquier
+    ``evidence_quote`` aunque fuera un texto genérico irrelevante o
+    inventado por el LLM. Con esta función una relación necesita que su
+    quote contenga (comparación case-insensitive, tolerante a
+    puntuación) tanto el subject como el object (o un prefijo >=4 chars
+    del mismo). Las relaciones sin quote o cuyo quote no respalda la
+    aserción quedan ``FAIL`` con ``validation_reason = evidence_unsupported``.
+
+    Es un check conservador — no reemplaza una verificación semántica
+    plena — pero bloquea los ataques triviales de prompt-injection del
+    paper o de "evidencia sintética" del LLM.
+    """
+    quote = _normalize(rel.get("evidence_quote") or "")
+    if not quote.strip():
+        return False
+    subj = _normalize(rel.get("subject") or "")
+    obj = _normalize(rel.get("object") or "")
+    if not subj or not obj:
+        return False
+
+    def _mentions(term: str) -> bool:
+        term = term.strip()
+        if not term:
+            return False
+        if term in quote:
+            return True
+        # Prefijo largo para tolerar formas gramaticales
+        return len(term) >= 4 and term[:4] in quote and any(
+            tok.startswith(term[:4]) for tok in quote.split()
+        )
+
+    return _mentions(subj) and _mentions(obj)
+
+
 def validate_relations(relations: list[dict]) -> dict:
-    """Step 5: Validate relations against SHACL-like rules."""
+    """Step 5: Validate relations against SHACL-like rules + evidence.
+
+    Capas de validación:
+
+    1. **Estructura (SHACL-like)** — tipos subject/predicate/object
+       deben coincidir con alguna regla de :data:`VALIDATE_RULES`.
+    2. **Linkage** — el entity-linker tiene que haber encontrado IRIs
+       (``rel['linked'] == True``).
+    3. **Evidence support (F6.6)** — el ``evidence_quote`` debe
+       mencionar realmente al subject y al object. Antes bastaba con
+       (1)+(2) y el LLM podía fabricar un quote arbitrario.
+    """
     valid = []
     invalid = []
     for rel in relations:
@@ -172,14 +227,29 @@ def validate_relations(relations: list[dict]) -> dict:
         pred = rel.get("predicate", "")
         ot = rel.get("object_type", "")
         rule_match = any(
-            st == r[0] and pred == r[1] and ot == r[2]
-            for r in VALIDATE_RULES
+            st == r[0] and pred == r[1] and ot == r[2] for r in VALIDATE_RULES
         )
-        if rule_match and rel.get("linked"):
-            valid.append({**rel, "validation": "PASS"})
-        else:
-            reason = "no_matching_rule" if not rule_match else "unlinked_entity"
-            invalid.append({**rel, "validation": "FAIL", "validation_reason": reason})
+        if not rule_match:
+            invalid.append(
+                {**rel, "validation": "FAIL", "validation_reason": "no_matching_rule"}
+            )
+            continue
+        if not rel.get("linked"):
+            invalid.append(
+                {**rel, "validation": "FAIL", "validation_reason": "unlinked_entity"}
+            )
+            continue
+        # F6.6 — nueva capa: el quote debe soportar la relación.
+        if not evidence_supports_relation(rel):
+            invalid.append(
+                {
+                    **rel,
+                    "validation": "FAIL",
+                    "validation_reason": "evidence_unsupported",
+                }
+            )
+            continue
+        valid.append({**rel, "validation": "PASS"})
     return {"valid": valid, "invalid": invalid}
 
 
