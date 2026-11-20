@@ -56,6 +56,18 @@ async def _create_sibling_tables(session: AsyncSession) -> None:
             ")"
         )
     )
+    # F6.3 — la saga también borra ehr_documents del caso. Añadimos la
+    # tabla para verificar la cascada en los tests.
+    await session.execute(
+        text(
+            "CREATE TABLE ehr_documents ("
+            "  id TEXT PRIMARY KEY,"
+            "  case_id TEXT NOT NULL,"
+            "  version INTEGER DEFAULT 1,"
+            "  checksum TEXT NOT NULL"
+            ")"
+        )
+    )
     await session.commit()
 
 
@@ -113,6 +125,14 @@ async def test_delete_case_softdeletes_images_and_drops_snapshots(
     await _seed_image(async_session, case_id, "img-A")
     await _seed_image(async_session, case_id, "img-B")
     await _seed_snapshot(async_session, case_id, "snap-1")
+    # F6.3 — ehr_document del caso (debe desaparecer tras la saga)
+    await async_session.execute(
+        text(
+            "INSERT INTO ehr_documents (id, case_id, version, checksum) "
+            "VALUES (:i, :c, 1, 'cs')"
+        ),
+        {"i": "ehr-A", "c": case_id},
+    )
     # Imagen de otro caso que NO se debe tocar
     await _seed_image(async_session, "case-other", "img-other")
     await async_session.commit()
@@ -139,6 +159,7 @@ async def test_delete_case_softdeletes_images_and_drops_snapshots(
     assert body["soft_deleted"] is True
     assert body["images_soft_deleted"] == 2
     assert body["graph_snapshots_deleted"] == 1
+    assert body["ehr_documents_deleted"] == 1
     assert body["storage_cleanup_ok"] is True
     assert body["storage_deleted"] == 7
 

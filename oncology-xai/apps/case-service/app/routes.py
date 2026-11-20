@@ -132,6 +132,20 @@ async def _cleanup_case_derivatives(
             exc_info=True,
         )
 
+    # F6.3 — EHR documents del caso: borramos los documents y la
+    # cascada ON DELETE (añadida en migración 002 de ehr-service) se
+    # encarga de entidades y mappings. Antes quedaban huérfanos y
+    # rompían los joins del dashboard con 500 al abrir el caso del
+    # paciente eliminado.
+    try:
+        res = await db.execute(
+            text("DELETE FROM ehr_documents WHERE case_id = :cid"),
+            {"cid": case_id},
+        )
+        stats["ehr_documents_deleted"] = res.rowcount or 0
+    except Exception:
+        logger.debug("ehr_documents cleanup skipped (table missing?)", exc_info=True)
+
     # S3 — best-effort, fuera de la transacción conceptual; no re-raise
     stats.update(_cleanup_case_storage(case_id))
     return stats
