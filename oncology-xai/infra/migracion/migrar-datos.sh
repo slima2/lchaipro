@@ -178,7 +178,18 @@ PY
   k rollout restart deploy/keycloak >/dev/null && k rollout status deploy/keycloak --timeout=600s
 
   log "Endureciendo el realm y registrando $PUBLIC_URL"
-  NS="$NS" PUBLIC_URL="$PUBLIC_URL" "$HERE/../keycloak/harden-realm.sh"
+  # F001 — la migración siempre apunta a pre-prod/prod (venimos de AWS);
+  # forzamos --disable-demo-users para cortar el riesgo de las cuentas
+  # demo con contraseñas conocidas (admin1/clinician1/auditor1). El
+  # operador puede saltarse esto exportando KC_KEEP_DEMO=1 antes de
+  # correr el script (desaconsejado, y queda en los logs).
+  _kc_demo_flag="--disable-demo-users"
+  if [[ "${KC_KEEP_DEMO:-0}" == "1" ]]; then
+    _kc_demo_flag="--keep-demo-users"
+    log "AVISO: KC_KEEP_DEMO=1 → los usuarios demo NO se deshabilitarán. F001 no queda cerrado."
+  fi
+  NS="$NS" PUBLIC_URL="$PUBLIC_URL" KC_ENV="${KC_ENV:-prod}" \
+    "$HERE/../keycloak/harden-realm.sh" "$_kc_demo_flag"
 }
 
 paso_verificar() {
