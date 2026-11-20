@@ -81,21 +81,26 @@ def process_image_task(
             {"id": image_id},
         ).fetchone()
 
-        image_format = (row[1] or "").strip().lower() if row and row[1] else None
-        if row and row[0]:
-            uri = row[0]
-            key = uri.replace(f"s3://{settings.s3_bucket}/", "")
-            if not image_format and "." in key:
-                image_format = key.rsplit(".", 1)[-1].lower()
-            image_bytes = storage.download_bytes(key)
-        else:
-            # If no image in DB yet (e.g. mock), use placeholder
-            from PIL import Image as PILImage
-
-            img = PILImage.new("RGB", (448, 448), (200, 200, 200))
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            image_bytes = buf.getvalue()
+        # F6.4 — fail-hard si la imagen no está en DB.
+        # Antes se generaba un placeholder gris 448x448 y el pipeline
+        # continuaba "normalmente", lo que permitía producir un
+        # ResultBundle sintético para un image_id arbitrario (pentest §6.4:
+        # el clinician veía resultados que "parecían reales" para una
+        # imagen que nunca existió). El HTTP :process (F6.1) ya rechaza
+        # imágenes inexistentes o pending-upload; este check es defensa
+        # en profundidad para jobs encolados fuera del endpoint (scripts,
+        # replays, bugs de race).
+        if not row or not row[0]:
+            raise ValueError(
+                f"Image {image_id} not found in DB — refusing to run "
+                "inference against a placeholder."
+            )
+        uri = row[0]
+        image_format = (row[1] or "").strip().lower() if row[1] else None
+        key = uri.replace(f"s3://{settings.s3_bucket}/", "")
+        if not image_format and "." in key:
+            image_format = key.rsplit(".", 1)[-1].lower()
+        image_bytes = storage.download_bytes(key)
 
         # Build config (v2) — auto-detect GPU
         import torch

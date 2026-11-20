@@ -163,6 +163,10 @@ async def test_soft_deleted_patients_are_hidden_from_list(
 ) -> None:
     alive = await _seed_patient(client, "F6.2-LIST-ALIVE")
     dead = await _seed_patient(client, "F6.2-LIST-DEAD")
+    # F6.4 — un clinician solo ve pacientes con al menos un caso suyo;
+    # necesitamos sembrar casos para que clinician1 los vea en el GET.
+    await _seed_case(client, alive)
+    await _seed_case(client, dead)
     r = await client.request(
         "DELETE", f"/api/v1/patients/{dead}", headers=_ADMIN, json=_REASON
     )

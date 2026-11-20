@@ -61,6 +61,31 @@ _fake_celery_module.celery = _FakeCelery()  # type: ignore[attr-defined]
 sys.modules["app.celery_app"] = _fake_celery_module
 
 
+# ``app.ml.checkpoints.loader`` importa torch en el top-level. Lo
+# stubeamos para que los tests de ``PUT /parameters`` (F6.4) no
+# requieran torch. Sus constantes son las que el endpoint muta.
+_fake_loader = types.ModuleType("app.ml.checkpoints.loader")
+_fake_loader.PROPOSED_AUROC = {"EGFR": 0.82, "KRAS": 0.80, "TP53": 0.78}  # type: ignore[attr-defined]
+_fake_loader.AUROC_THRESHOLD = 0.70  # type: ignore[attr-defined]
+_fake_loader.BEST_METHOD = {"EGFR": "abmil", "KRAS": "choquet", "TP53": "xgboost"}  # type: ignore[attr-defined]
+_fake_loader.BEST_FOLD = {"EGFR": 0}  # type: ignore[attr-defined]
+_fake_loader.GENE_MUTATION_THRESHOLD = {"EGFR": 0.6, "KRAS": 0.6, "TP53": 0.6}  # type: ignore[attr-defined]
+
+
+class _FakeCheckpointLoader:
+    def __init__(self, *a, **k):
+        pass
+
+    def get_checkpoint_status(self):
+        return {"status": "stub"}
+
+
+_fake_loader.CheckpointLoader = _FakeCheckpointLoader  # type: ignore[attr-defined]
+sys.modules["app.ml.checkpoints"] = types.ModuleType("app.ml.checkpoints")
+sys.modules["app.ml"] = types.ModuleType("app.ml")
+sys.modules["app.ml.checkpoints.loader"] = _fake_loader
+
+
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from oncology_common.database import Base  # noqa: E402

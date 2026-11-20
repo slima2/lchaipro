@@ -10,6 +10,7 @@ from uuid import uuid4
 from event_contracts.envelope import EventEnvelope
 from event_contracts.publisher import EventPublisher
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from oncology_common.authz import require_case_access
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -208,21 +209,57 @@ async def create_patient(
 
 @patients_router.get("/patients")
 async def list_patients(
+    request: Request,
     query: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
+    """List patients.
+
+    F6.4 — un clinician solo ve pacientes con al menos un caso suyo
+    (creado por él y no soft-deleted). admin / auditor ven todos. Antes
+    un clinician veía la lista completa, incluyendo pacientes de otros.
+    """
     stmt = select(PatientDB).where(PatientDB.deleted_at.is_(None))
     if query:
         stmt = stmt.where(PatientDB.external_id.ilike(f"%{query}%"))
+
+    if "admin" not in _roles(request) and "auditor" not in _roles(request):
+        stmt = stmt.where(
+            select(CaseDB.id)
+            .where(
+                CaseDB.patient_id == PatientDB.id,
+                CaseDB.created_by == _actor(request),
+                CaseDB.deleted_at.is_(None),
+            )
+            .exists()
+        )
     result = await db.execute(stmt)
     return [_patient_dict(p) for p in result.scalars().all()]
 
 
 @patients_router.get("/patients/{patient_id}")
-async def get_patient(patient_id: str, db: AsyncSession = Depends(get_db)):
+async def get_patient(
+    patient_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
     patient = await db.get(PatientDB, patient_id)
     if not patient or patient.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # F6.4 — ownership: clinician solo accede si tiene al menos un caso
+    # activo sobre el paciente. admin / auditor pueden ver cualquiera.
+    if "admin" not in _roles(request) and "auditor" not in _roles(request):
+        has_case = (
+            await db.execute(
+                select(CaseDB.id).where(
+                    CaseDB.patient_id == patient_id,
+                    CaseDB.created_by == _actor(request),
+                    CaseDB.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        if not has_case:
+            # 404 (no revelar existencia) — mismo patrón que authz
+            raise HTTPException(status_code=404, detail="Patient not found")
     return _patient_dict(patient)
 
 
@@ -372,21 +409,32 @@ async def create_case(
 
 @cases_router.get("/cases")
 async def list_cases(
+    request: Request,
     patient_id: str | None = Query(None, alias="patientId"),
     db: AsyncSession = Depends(get_db),
 ):
+    """List cases.
+
+    F6.4 — un clinician solo ve casos que creó él. admin / auditor ven
+    todos. Antes era visible la lista completa.
+    """
     stmt = select(CaseDB).where(CaseDB.deleted_at.is_(None))
     if patient_id:
         stmt = stmt.where(CaseDB.patient_id == patient_id)
+    if "admin" not in _roles(request) and "auditor" not in _roles(request):
+        stmt = stmt.where(CaseDB.created_by == _actor(request))
     result = await db.execute(stmt)
     return [_case_dict(c) for c in result.scalars().all()]
 
 
 @cases_router.get("/cases/{case_id}")
-async def get_case(case_id: str, db: AsyncSession = Depends(get_db)):
+async def get_case(case_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    # F6.4 — ownership: clinician solo ve casos propios; supervisores
+    # ven cualquiera. 404 si no existe o soft-deleted (consistente con
+    # el patrón del helper authz).
+    await require_case_access(db, request, case_id)
     case = await db.get(CaseDB, case_id)
-    if not case or case.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    assert case is not None  # require_case_access ya filtró
     return _case_dict(case)
 
 
@@ -449,11 +497,38 @@ async def delete_case(
 
 @cases_router.patch("/cases/{case_id}")
 async def update_case(
-    case_id: str, body: dict[str, Any], db: AsyncSession = Depends(get_db)
+    case_id: str,
+    body: dict[str, Any],
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
+    """Patch a case.
+
+    F6.4 — ownership: solo el creador del caso o un admin pueden mutar.
+    Un clinician no puede editar casos de otro aunque conozca su id.
+    Rechaza además intentos de reasignar ``created_by`` o resucitar
+    casos soft-deleted desde el body.
+    """
+    # Primero chequeo de ownership (404 si no existe / está soft-deleted,
+    # 403 si es de otro clinician y no soy supervisor).
+    await require_case_access(db, request, case_id)
+
     case = await db.get(CaseDB, case_id)
-    if not case or case.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Case not found")
+    # require_case_access ya filtró deleted_at / existencia; esto es solo
+    # para el linter.
+    assert case is not None and case.deleted_at is None
+
+    # F6.4 — allowlist estricto de campos editables.
+    # NO permitimos tocar ``created_by`` ni ``patient_id`` desde el PATCH:
+    # cambiarlos equivaldría a transferir un caso de dueño/paciente desde
+    # un endpoint de "mutación menor".
+    for forbidden in ("created_by", "patient_id", "deleted_at", "deleted_by"):
+        if forbidden in body:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Field '{forbidden}' cannot be modified via PATCH",
+            )
+
     if "status" in body:
         case.status = body["status"]
     if "tags" in body:

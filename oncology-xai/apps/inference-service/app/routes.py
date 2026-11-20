@@ -355,50 +355,135 @@ async def get_parameters():
     }
 
 
+# F6.4 — allowlist de rangos admitidos para los parámetros del pipeline.
+#
+# Antes cualquier clinician podía llamar ``PUT /parameters`` con
+# ``mutation_threshold=0.0`` y dejar todas las predicciones futuras
+# marcadas como "concluyentes" para TODO el deployment (variable de
+# proceso, no por caso). Dos cambios:
+#
+# 1. El endpoint requiere rol ``admin`` en el servicio (ya lo pedía el
+#    gateway como clinician+admin — bajamos a admin only en runtime).
+# 2. Cada campo tiene un rango válido. Valores fuera de rango → 400.
+#    El worker (celery) no lee directamente del body; lee de
+#    ``settings.*`` / módulos globales, así que el único vector es este
+#    endpoint.
+_PARAM_RANGES: dict[str, tuple[float, float]] = {
+    "auroc_threshold": (0.5, 0.95),
+    "mutation_threshold": (0.3, 0.9),
+    "pattern_threshold": (0.3, 0.9),
+    "per_gene_auroc": (0.5, 0.99),
+    "per_gene_mutation": (0.3, 0.9),
+    # Enteros
+    "top_k_tiles": (1, 500),
+    "max_tiles": (1, 20_000),
+}
+
+_ALLOWED_METHODS: frozenset[str] = frozenset(
+    {"abmil", "choquet", "xgboost", "pattern_informed", "fuzzy_choquet"}
+)
+
+
+def _clamp_float(name: str, raw: Any) -> float:
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{name}: must be a number")
+    lo, hi = _PARAM_RANGES[name]
+    if not (lo <= val <= hi):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name}={val} out of allowed range [{lo}, {hi}]",
+        )
+    return val
+
+
+def _clamp_int(name: str, raw: Any) -> int:
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{name}: must be an integer")
+    lo, hi = _PARAM_RANGES[name]
+    if not (lo <= val <= hi):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name}={val} out of allowed range [{int(lo)}, {int(hi)}]",
+        )
+    return val
+
+
 @router.put("/parameters")
-async def update_parameters(body: dict[str, Any]):
-    """Update system parameters at runtime."""
+async def update_parameters(request: Request, body: dict[str, Any]):
+    """Update system parameters at runtime.
+
+    F6.4 — admin-only + rangos validados. Los valores fuera del
+    allowlist se rechazan con 400 y no afectan al estado global.
+    """
+    if not _is_admin(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required to mutate pipeline parameters",
+        )
+
     import app.ml.checkpoints.loader as loader_mod
 
-    updated = []
+    updated: list[str] = []
+    actor = _actor(request)
 
     if "auroc_values" in body and isinstance(body["auroc_values"], dict):
-        for gene, val in body["auroc_values"].items():
-            if gene in loader_mod.PROPOSED_AUROC:
-                loader_mod.PROPOSED_AUROC[gene] = float(val)
-                updated.append(f"AUROC[{gene}]={val}")
+        for gene, raw in body["auroc_values"].items():
+            if gene not in loader_mod.PROPOSED_AUROC:
+                continue  # ignorar genes desconocidos
+            val = _clamp_float("per_gene_auroc", raw)
+            loader_mod.PROPOSED_AUROC[gene] = val
+            updated.append(f"AUROC[{gene}]={val}")
 
     if "auroc_threshold" in body:
-        loader_mod.AUROC_THRESHOLD = float(body["auroc_threshold"])
-        updated.append(f"threshold={body['auroc_threshold']}")
+        val = _clamp_float("auroc_threshold", body["auroc_threshold"])
+        loader_mod.AUROC_THRESHOLD = val
+        updated.append(f"threshold={val}")
 
     if "best_method" in body and isinstance(body["best_method"], dict):
         for gene, method in body["best_method"].items():
-            if gene in loader_mod.BEST_METHOD:
-                loader_mod.BEST_METHOD[gene] = str(method)
-                updated.append(f"method[{gene}]={method}")
+            if gene not in loader_mod.BEST_METHOD:
+                continue
+            method_str = str(method).lower()
+            if method_str not in _ALLOWED_METHODS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"best_method[{gene}]={method!r} not in allowed "
+                        f"set {sorted(_ALLOWED_METHODS)}"
+                    ),
+                )
+            loader_mod.BEST_METHOD[gene] = method_str
+            updated.append(f"method[{gene}]={method_str}")
 
     if "mutation_threshold" in body:
-        settings.mutation_threshold = float(body["mutation_threshold"])
-        updated.append(f"mutation_threshold={body['mutation_threshold']}")
+        val = _clamp_float("mutation_threshold", body["mutation_threshold"])
+        settings.mutation_threshold = val
+        updated.append(f"mutation_threshold={val}")
 
     if "gene_mutation_thresholds" in body and isinstance(
         body["gene_mutation_thresholds"], dict
     ):
-        for gene, val in body["gene_mutation_thresholds"].items():
-            if gene in loader_mod.GENE_MUTATION_THRESHOLD:
-                loader_mod.GENE_MUTATION_THRESHOLD[gene] = float(val)
-                updated.append(f"gene_threshold[{gene}]={val}")
+        for gene, raw in body["gene_mutation_thresholds"].items():
+            if gene not in loader_mod.GENE_MUTATION_THRESHOLD:
+                continue
+            val = _clamp_float("per_gene_mutation", raw)
+            loader_mod.GENE_MUTATION_THRESHOLD[gene] = val
+            updated.append(f"gene_threshold[{gene}]={val}")
 
     if "top_k_tiles" in body:
-        settings.v2_top_k_tiles = int(body["top_k_tiles"])
-        updated.append(f"top_k_tiles={body['top_k_tiles']}")
+        settings.v2_top_k_tiles = _clamp_int("top_k_tiles", body["top_k_tiles"])
+        updated.append(f"top_k_tiles={settings.v2_top_k_tiles}")
 
     if "max_tiles" in body:
-        settings.v2_max_tiles_wsi = int(body["max_tiles"])
-        updated.append(f"max_tiles={body['max_tiles']}")
+        settings.v2_max_tiles_wsi = _clamp_int("max_tiles", body["max_tiles"])
+        updated.append(f"max_tiles={settings.v2_max_tiles_wsi}")
 
-    return {"status": "updated", "changes": updated}
+    logger.info("Parameters updated by %s: %s", actor, updated)
+    return {"status": "updated", "changes": updated, "actor": actor}
 
 
 _DISALLOWED_PATTERN_NAMES = frozenset({"mucinous"})
