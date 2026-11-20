@@ -176,11 +176,46 @@ export const getKGChangelog = (snapshotId: string) =>
 export const getGeneAssociations = () => api.get('/graph/gene-associations');
 
 // Artifacts — streamed from MinIO via image-service proxy
+//
+// F6.8 — este helper lleva el JWT en la query string. Expone el token
+// en el historial del navegador y en logs de proxies/CDN previos al
+// gateway. Queda vivo sólo para los componentes que aún no han
+// migrado a ``getArtifactS3Url`` (ver debajo); en preprod/prod el
+// backend responde 401 cuando ``AUTH_QUERY_TOKEN_ENABLED=false``, lo
+// que fuerza la migración.
+/** @deprecated F6.8 — usar getArtifactS3Url (async, sin token en URL). */
 export const getArtifactUrl = (uri: string) => {
   const key = uri.replace(/^s3:\/\/[^/]+\//, '');
-  // Loaded by <img src>/fetch, which cannot send the Authorization header: pass the token in the URL.
   const token = keycloak.token ? `&access_token=${encodeURIComponent(keycloak.token)}` : '';
+  if (import.meta.env?.DEV) {
+    console.warn('getArtifactUrl is deprecated (F6.8); migrate to getArtifactS3Url');
+  }
   return `${API_URL}/api/v1/artifacts/presigned?key=${encodeURIComponent(key)}${token}`;
+};
+
+/**
+ * F6.8 — reemplazo seguro de ``getArtifactUrl``.
+ *
+ * Llama al backend con ``Authorization: Bearer ...`` y recibe una
+ * presigned URL S3 ya firmada (TTL 5 min). Esa URL va directa al
+ * ``<img src>``: lo que viaja por la barra del navegador es la firma
+ * HMAC de S3, no el JWT del usuario.
+ *
+ * Uso:
+ * ```tsx
+ * const [url, setUrl] = useState<string | null>(null);
+ * useEffect(() => {
+ *   getArtifactS3Url(uri).then(setUrl);
+ * }, [uri]);
+ * return url ? <img src={url} /> : <Spinner />;
+ * ```
+ */
+export const getArtifactS3Url = async (uri: string): Promise<string> => {
+  const key = uri.replace(/^s3:\/\/[^/]+\//, '');
+  const res = await api.get<{ url: string; expires_in: number }>(
+    `/artifacts/presigned-url?key=${encodeURIComponent(key)}`,
+  );
+  return res.data.url;
 };
 
 // Active Learning — Pattern Corrections (separate microservice)

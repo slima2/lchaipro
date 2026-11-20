@@ -638,6 +638,57 @@ async def get_viewer_url(
     return {"image_id": image_id, "viewer_url": url}
 
 
+@router.get("/artifacts/presigned-url")
+async def get_artifact_presigned_url(
+    request: Request,
+    key: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """F6.8 — Devuelve una URL S3 presigned para el artifact.
+
+    Este endpoint sustituye al flujo F6.8 inseguro
+    (``GET /artifacts/presigned?key=...&access_token=<JWT>``):
+
+    * El cliente llama aquí con el JWT en el header ``Authorization``
+      (nunca en query).
+    * El servidor valida ownership del ``case_id`` extraído de la key
+      (igual que el endpoint viejo).
+    * Devuelve ``{url, expires_in}`` — una URL S3 ya firmada por
+      HMAC propio de S3 con TTL corto. **No contiene el JWT**.
+    * El frontend pone esa URL directamente en ``<img src>``. Lo que
+      viaja por la barra del navegador/CDN logs es la firma de S3,
+      no un token de sesión reutilizable.
+
+    Es el camino recomendado por el pentest §6.8. El endpoint viejo
+    sigue existiendo con ``Deprecation: true`` y queda deshabilitado
+    en pre-prod/prod vía ``AUTH_QUERY_TOKEN_ENABLED=false``.
+    """
+    try:
+        key_case_id = case_id_from_key(key)
+    except InvalidArtifactKey as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await require_case_access(db, request, key_case_id)
+
+    storage = _storage()
+    try:
+        url = storage.presigned_url(key, expires_in=300)  # 5 min
+    except Exception as exc:
+        logger.error("Failed to presign artifact key=%s: %s", key, exc)
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+
+    # No cachear el JSON (contiene URL firmada). El objeto en S3 se
+    # puede cachear por el navegador por los 300 s de validez.
+    return Response(
+        content=f'{{"url": "{url}", "expires_in": 300}}',
+        media_type="application/json",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
 @router.get("/artifacts/presigned")
 async def get_artifact_presigned(
     request: Request,
@@ -694,6 +745,11 @@ async def get_artifact_presigned(
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
             "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+            # F6.8 — señalar a los clientes que este endpoint debe
+            # migrarse al nuevo /artifacts/presigned-url, que no
+            # requiere JWT en la URL.
+            "Deprecation": "true",
+            "Link": '</api/v1/artifacts/presigned-url>; rel="successor-version"',
         },  # datos clínicos
     )
 
