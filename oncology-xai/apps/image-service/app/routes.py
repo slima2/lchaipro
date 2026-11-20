@@ -7,7 +7,6 @@ import io
 import logging
 from uuid import uuid4
 
-import numpy as np
 from event_contracts.envelope import EventEnvelope
 from event_contracts.publisher import EventPublisher
 from fastapi import (
@@ -27,9 +26,19 @@ from oncology_common.authz import (
     require_case_access,
 )
 from oncology_common.storage import StorageClient
-from PIL import Image as PILImage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _lazy_imaging():
+    """Imports pesados (numpy + Pillow) sólo cuando el handler los
+    necesita, para que los tests F6.7 no exijan openslide/numpy en el
+    virtualenv mínimo."""
+    import numpy as np  # noqa: PLC0415
+    from PIL import Image as PILImage  # noqa: PLC0415
+
+    return np, PILImage
+
 
 from app.config import settings
 from app.database import get_db
@@ -89,10 +98,12 @@ def _validate_he_stain(data: bytes, ext: str) -> None:
                     slide.close()
                 finally:
                     os.unlink(tmp)
+                np, PILImage = _lazy_imaging()
                 arr = np.array(thumb.convert("RGB"))
             except Exception:
                 return
         else:
+            np, PILImage = _lazy_imaging()
             img = PILImage.open(io.BytesIO(data))
             img.thumbnail((512, 512))
             arr = np.array(img.convert("RGB"))
@@ -223,6 +234,91 @@ CT_MAP = {
 MULTIPART_THRESHOLD = 4_500_000_000  # 4.5 GB — use multipart for files above this
 PART_SIZE = 100_000_000  # 100 MB per part
 
+# F6.7 — topes duros contra DoS en request-upload.
+#
+# Pentest 2026-11-11 §6.7 midió 1 TB = 10.000 partes (3.75 s, 5.4 MB
+# JSON) y proyectó 1 PB = 10.000.000 partes (~1 h CPU, 5.4 GB JSON).
+# El bucle HMAC por parte era síncrono y bloqueaba el event loop con
+# una sola petición autenticada.
+#
+# Topes elegidos:
+#  * ``MAX_SLIDE_BYTES`` = 50 GB — por encima de cualquier WSI SVS real
+#    (<40 GB para 40x) y por debajo del régimen de ataque; filesets
+#    legítimos más grandes requieren decisión de admin.
+#  * ``MAX_NUM_PARTS``  = 200 — alineado con la recomendación del
+#    pentest (<=200). 200 × PART_SIZE (100 MB) = 20 GB, cubre bien el
+#    caso válido de multipart; para WSI de 20-50 GB subimos PART_SIZE
+#    efectivo (reconfiguración). Si una petición legítima lo rebasa
+#    hay que subir PART_SIZE, no el límite de partes.
+MAX_SLIDE_BYTES = 50 * 1024 * 1024 * 1024  # 50 GiB
+MAX_NUM_PARTS = 200
+
+# F6.7 — rate-limit in-memory por (user_id, case_id).
+#
+# No reemplaza un rate-limit cluster-wide en el gateway (eso vendrá en
+# una iteración futura con Redis), pero al estar por-pod bloquea el
+# escenario del pentest: un clinician autenticado golpeando el endpoint
+# en un bucle. Permitimos ``_UPLOAD_RATE_LIMIT`` peticiones por ventana
+# de ``_UPLOAD_RATE_WINDOW`` segundos por usuario-caso.
+_UPLOAD_RATE_LIMIT = 20
+_UPLOAD_RATE_WINDOW = 60.0
+_upload_rate_hits: dict[tuple[str, str], list[float]] = {}
+
+
+def _upload_rate_check(user_id: str, case_id: str) -> None:
+    import time as _time
+
+    now = _time.monotonic()
+    key = (user_id, case_id)
+    hits = [t for t in _upload_rate_hits.get(key, []) if now - t < _UPLOAD_RATE_WINDOW]
+    if len(hits) >= _UPLOAD_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Too many upload requests for this case; max "
+                f"{_UPLOAD_RATE_LIMIT} per {int(_UPLOAD_RATE_WINDOW)}s."
+            ),
+        )
+    hits.append(now)
+    _upload_rate_hits[key] = hits
+    # Prevención de memoria: si el dict crece sin control, podamos
+    # entradas vacías cada vez que superamos 10k keys.
+    if len(_upload_rate_hits) > 10_000:
+        for k in list(_upload_rate_hits.keys()):
+            if not any(now - t < _UPLOAD_RATE_WINDOW for t in _upload_rate_hits[k]):
+                _upload_rate_hits.pop(k, None)
+
+
+def _validated_size_bytes(raw: object) -> int:
+    """F6.7 — exige ``int`` estricto y rango ``(0, MAX_SLIDE_BYTES]``.
+
+    Antes ``body.get('size_bytes', 0)`` se pasaba sin validar; tipos
+    inválidos ("abc", 1.5e15, [1], None) llegaban al worker y tiraban
+    500. Ahora todo lo que no sea un int en rango → 400 explícito.
+    """
+    # Nota: ``bool`` es subclase de ``int`` en Python — lo excluimos
+    # explícitamente porque ``True`` casteado a int sería 1 silencioso
+    # y no es lo que el cliente quiso decir.
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise HTTPException(
+            status_code=400,
+            detail="size_bytes must be an integer number of bytes",
+        )
+    if raw <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="size_bytes must be > 0",
+        )
+    if raw > MAX_SLIDE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"size_bytes={raw} exceeds MAX_SLIDE_BYTES={MAX_SLIDE_BYTES}. "
+                "Contact an administrator to upload files larger than 50 GiB."
+            ),
+        )
+    return raw
+
 
 @router.post("/cases/{case_id}/images:request-upload", status_code=status.HTTP_200_OK)
 async def request_upload(
@@ -231,14 +327,26 @@ async def request_upload(
     """Return presigned URL(s) for direct S3 upload.
 
     For files < 4.5 GB: returns a single presigned PUT URL.
-    For files >= 4.5 GB: returns multipart upload URLs (one per 100 MB part).
+    For files >= 4.5 GB: returns multipart upload URLs (one per 100 MB part),
+    capped at :data:`MAX_NUM_PARTS` parts and :data:`MAX_SLIDE_BYTES` total.
 
     Body: { "filename": "slide.svs", "size_bytes": 10000000000 }
+
+    F6.7 — size_bytes es validado como int en rango; el número de
+    partes se calcula y verifica **antes** de inicializar el multipart
+    en el backend de objetos, para no dejar uploads colgantes cuando
+    la petición resulta abusiva.
     """
     # F6.5 — ownership del caso antes de generar presigned S3
     await require_case_access(db, request, case_id)
+    # F6.7 — rate-limit por (usuario, caso) antes de tocar S3
+    _upload_rate_check(
+        request.headers.get("x-user-id", "unknown"),
+        case_id,
+    )
     filename = body.get("filename", "image.png")
-    size_bytes = body.get("size_bytes", 0)
+    # F6.7 — type+range check antes de tocar nada
+    size_bytes = _validated_size_bytes(body.get("size_bytes", 0))
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -266,12 +374,34 @@ async def request_upload(
         return url
 
     if size_bytes >= MULTIPART_THRESHOLD:
-        upload_id = storage.create_multipart_upload(key, content_type=content_type)
+        # F6.7 — calcular num_parts ANTES de inicializar el multipart.
+        # Antes el handler iniciaba el multipart y luego entraba al
+        # bucle; una petición de 1 PB dejaba el multipart huérfano
+        # en SeaweedFS incluso si acabábamos tirando el request.
         num_parts = max(1, -(-size_bytes // PART_SIZE))  # ceil division
-        part_urls = []
-        for i in range(1, num_parts + 1):
-            url = storage.presigned_upload_part(key, upload_id, i, expires_in=7200)
-            part_urls.append({"part_number": i, "presigned_url": _externalize(url)})
+        if num_parts > MAX_NUM_PARTS:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"num_parts={num_parts} exceeds MAX_NUM_PARTS="
+                    f"{MAX_NUM_PARTS} (part_size={PART_SIZE}). Refusing "
+                    "to allocate presigned URLs."
+                ),
+            )
+        upload_id = storage.create_multipart_upload(key, content_type=content_type)
+        try:
+            part_urls = []
+            for i in range(1, num_parts + 1):
+                url = storage.presigned_upload_part(key, upload_id, i, expires_in=7200)
+                part_urls.append({"part_number": i, "presigned_url": _externalize(url)})
+        except Exception:
+            # Si algo explota a mitad de la generación de URLs, abortamos
+            # el multipart para no dejar el upload colgante.
+            try:
+                storage.abort_multipart_upload(key, upload_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to abort orphan multipart %s", upload_id)
+            raise
         response["multipart"] = True
         response["upload_id"] = upload_id
         response["part_size"] = PART_SIZE
@@ -354,6 +484,72 @@ async def complete_multipart(
         {"size_bytes": img.size_bytes},
     )
     return _img_dict(img)
+
+
+@router.post("/cases/{case_id}/images:abort-upload", status_code=status.HTTP_200_OK)
+async def abort_upload(
+    case_id: str,
+    body: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """F6.7 — abortar un multipart upload iniciado por :request-upload.
+
+    Antes no había endpoint público para abortar un multipart, por lo
+    que los uploads huérfanos (por error del cliente, timeout o abuso)
+    se acumulaban en SeaweedFS consumiendo recursos del backend. Sin
+    esto, la mitigación de los topes era parcial: una petición con
+    tope == MAX_NUM_PARTS podía dejar su multipart colgante si el
+    cliente nunca completaba.
+
+    Body: { "image_id": "uuid", "upload_id": "..." }
+
+    Requiere ownership del caso. Elimina la fila de ``images`` sólo si
+    nunca se confirmó la subida (``checksum = 'pending-upload'``); si
+    la imagen ya está confirmada o tiene jobs, no la tocamos (hay que
+    pasar por DELETE /images/{id} con las reglas de F6.5).
+    """
+    await require_case_access(db, request, case_id)
+    image_id = body.get("image_id")
+    upload_id = body.get("upload_id")
+    if not image_id or not upload_id:
+        raise HTTPException(
+            status_code=400, detail="image_id and upload_id are required"
+        )
+
+    img = await db.get(ImageDB, image_id)
+    if not img or img.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    storage = _storage()
+    key = img.storage_uri.replace(f"s3://{settings.s3_bucket}/", "")
+
+    try:
+        storage.abort_multipart_upload(key, upload_id)
+    except Exception as exc:  # noqa: BLE001
+        # ``NoSuchUpload`` es idempotente — si ya estaba abortado, seguir.
+        logger.warning("abort_multipart_upload %s/%s: %s", key, upload_id, exc)
+
+    aborted_row = False
+    if img.checksum == "pending-upload":
+        # Nunca se confirmó → la fila es basura; se puede borrar.
+        await db.delete(img)
+        await db.commit()
+        aborted_row = True
+
+    _publish_audit(
+        "image.upload_aborted",
+        case_id,
+        image_id,
+        request.headers.get("x-user-id", "unknown"),
+        {"upload_id": upload_id, "db_row_deleted": aborted_row},
+    )
+    return {
+        "image_id": image_id,
+        "upload_id": upload_id,
+        "aborted": True,
+        "db_row_deleted": aborted_row,
+    }
 
 
 @router.post("/cases/{case_id}/images:confirm-upload", status_code=status.HTTP_200_OK)
