@@ -1,10 +1,11 @@
 import type React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, getResultBundle, getArtifacts, getArtifactUrl, getImages, getJob, submitPatternCorrections, getActiveLearningJob } from '../api';
+import { api, getResultBundle, getArtifacts, getArtifactS3Url, getImages, getJob, submitPatternCorrections, getActiveLearningJob } from '../api';
 import { patternColor, filterAllowedPatternResults, predominantPatternForDisplay, PATTERN_COLORS, type AnorakPattern } from '../patternConstants';
 import { classifyAttention } from '../fuzzyLabels';
 import { useAuth } from '../auth/AuthProvider';
+import { useArtifactsS3Urls } from '../hooks/useArtifactS3Url';
 
 interface Props {
   caseId: string;
@@ -124,13 +125,19 @@ export default function ViewerPanel({ caseId, imageId, resultBundleId }: Props) 
       setRegionMap(null);
       return;
     }
-    const patternUrl = getArtifactUrl(regionMapArt.uri);
-    const attnUrl = attentionMapArt?.uri ? getArtifactUrl(attentionMapArt.uri) : null;
-    Promise.all([
-      fetch(patternUrl).then((r) => r.json()).catch(() => null),
-      attnUrl ? fetch(attnUrl).then((r) => r.json()).catch(() => null) : Promise.resolve(null),
-    ])
-      .then(([patternData, attentionData]) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // F6.8 — URLs S3 presignadas (sin JWT en query)
+        const [patternUrl, attnUrl] = await Promise.all([
+          getArtifactS3Url(regionMapArt.uri),
+          attentionMapArt?.uri ? getArtifactS3Url(attentionMapArt.uri) : Promise.resolve(null),
+        ]);
+        const [patternData, attentionData] = await Promise.all([
+          fetch(patternUrl).then((r) => r.json()).catch(() => null),
+          attnUrl ? fetch(attnUrl).then((r) => r.json()).catch(() => null) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
         if (!Array.isArray(patternData)) {
           setRegionMap(null);
           return;
@@ -150,16 +157,30 @@ export default function ViewerPanel({ caseId, imageId, resultBundleId }: Props) 
             : p;
         });
         setRegionMap(merged);
-      })
-      .catch(() => setRegionMap(null));
+      } catch {
+        if (!cancelled) setRegionMap(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [regionMapArt?.uri, attentionMapArt?.uri]);
 
-  const bust = cacheBust ? `&_cb=${cacheBust}` : '';
-  const thumbnailUrl = thumbArt?.uri ? getArtifactUrl(thumbArt.uri) + bust : null;
-  const patternUrl = roiArt?.uri ? getArtifactUrl(roiArt.uri) + bust : null;
-  const attentionUrl = attnArt?.uri ? getArtifactUrl(attnArt.uri) + bust : null;
-  const combinedUrl = combArt?.uri ? getArtifactUrl(combArt.uri) + bust : null;
-  const originalUrl = thumbnailUrl || (isWSI ? patternUrl : (selImageData?.storage_uri ? getArtifactUrl(selImageData.storage_uri) : null));
+  // F6.8 — presigned URLs S3. ``cacheBust`` dispara una nueva firma
+  // S3 cuando el active-learning job regenera el artifact. Antes se
+  // sufijaba ``&_cb=...`` al URL — eso rompería la firma HMAC de S3.
+  const { urls: viewerUrls } = useArtifactsS3Urls({
+    thumb: thumbArt?.uri ?? null,
+    pattern: roiArt?.uri ?? null,
+    attention: attnArt?.uri ?? null,
+    combined: combArt?.uri ?? null,
+    originalRaw: selImageData?.storage_uri ?? null,
+  }, cacheBust);
+  const thumbnailUrl = viewerUrls.thumb;
+  const patternUrl = viewerUrls.pattern;
+  const attentionUrl = viewerUrls.attention;
+  const combinedUrl = viewerUrls.combined;
+  const originalUrl = thumbnailUrl || (isWSI ? patternUrl : viewerUrls.originalRaw);
 
   const activeUrl = layer === 'original' ? (originalUrl || patternUrl)
     : layer === 'pattern' ? (patternUrl || originalUrl)
@@ -354,14 +375,20 @@ export default function ViewerPanel({ caseId, imageId, resultBundleId }: Props) 
           queryClient.invalidateQueries({ queryKey: ['viewer-bundle', resultBundleId] });
           queryClient.invalidateQueries({ queryKey: ['viewer-artifacts', resultBundleId] });
           // Re-fetch region maps with new data (merging pattern + attention as in the load effect).
+          // F6.8 — pedimos URLs S3 nuevas (firma nueva). El viejo ``_cb``
+          // ya no hace falta: la URL S3 generada por el presigned
+          // endpoint es distinta en cada call.
           if (regionMapArt?.uri) {
-            const patternUrl = getArtifactUrl(regionMapArt.uri) + `&_cb=${Date.now()}`;
-            const attnUrl = attentionMapArt?.uri ? getArtifactUrl(attentionMapArt.uri) + `&_cb=${Date.now()}` : null;
-            Promise.all([
-              fetch(patternUrl).then((r) => r.json()).catch(() => null),
-              attnUrl ? fetch(attnUrl).then((r) => r.json()).catch(() => null) : Promise.resolve(null),
-            ])
-              .then(([patternData, attentionData]) => {
+            (async () => {
+              try {
+                const [patternUrl, attnUrl] = await Promise.all([
+                  getArtifactS3Url(regionMapArt.uri),
+                  attentionMapArt?.uri ? getArtifactS3Url(attentionMapArt.uri) : Promise.resolve(null),
+                ]);
+                const [patternData, attentionData] = await Promise.all([
+                  fetch(patternUrl).then((r) => r.json()).catch(() => null),
+                  attnUrl ? fetch(attnUrl).then((r) => r.json()).catch(() => null) : Promise.resolve(null),
+                ]);
                 if (!Array.isArray(patternData)) return;
                 if (!Array.isArray(attentionData) || attentionData.length === 0) {
                   setRegionMap(patternData);
@@ -377,8 +404,10 @@ export default function ViewerPanel({ caseId, imageId, resultBundleId }: Props) 
                     : p;
                 });
                 setRegionMap(merged);
-              })
-              .catch(() => {});
+              } catch {
+                /* retry on next poll */
+              }
+            })();
           }
           setTimeout(() => { setRetrainJobId(null); setRetrainStatus(null); }, 4000);
         } else if (data.status === 'FAILED') {

@@ -23,12 +23,8 @@ def upgrade() -> None:
         "images",
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.add_column(
-        "images", sa.Column("deleted_by", sa.String(255), nullable=True)
-    )
-    op.add_column(
-        "images", sa.Column("delete_reason", sa.String(500), nullable=True)
-    )
+    op.add_column("images", sa.Column("deleted_by", sa.String(255), nullable=True))
+    op.add_column("images", sa.Column("delete_reason", sa.String(500), nullable=True))
     # Índice parcial para scans "activos" eficientes
     op.create_index(
         "idx_images_case_active",

@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import axios from 'axios';
-import { api, getResultBundle, getArtifacts, getArtifactUrl, getGeneAssociations } from '../api';
+import { api, getResultBundle, getArtifacts, getArtifactS3Url, getGeneAssociations } from '../api';
+import { useArtifactS3Url } from '../hooks/useArtifactS3Url';
 import { clinicalAssocForGene } from '../data/geneClinicalAssociations';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -156,9 +157,10 @@ const GENES_V2 = ['TP53', 'EGFR', 'KRAS', 'STK11', 'KEAP1', 'RBM10'];
 
 function ArtifactImage({ uri, alt, className }: { uri: string; alt: string; className?: string }) {
   const [error, setError] = useState(false);
-  const imgUrl = getArtifactUrl(uri);
+  // F6.8 — URL S3 presignada (sin JWT en query)
+  const { url: imgUrl, loading, error: fetchError } = useArtifactS3Url(uri);
 
-  if (error) {
+  if (error || fetchError) {
     return (
       <div className={`flex items-center justify-center bg-gray-50 text-gray-400 text-xs ${className || ''}`}>
         <div className="text-center">
@@ -172,7 +174,45 @@ function ArtifactImage({ uri, alt, className }: { uri: string; alt: string; clas
     );
   }
 
+  if (loading || !imgUrl) {
+    return (
+      <div className={`flex items-center justify-center bg-gray-50 ${className || ''}`}>
+        <div className="animate-pulse text-gray-300 text-xs">Loading…</div>
+      </div>
+    );
+  }
+
   return <img src={imgUrl} alt={alt} className={className} onError={() => setError(true)} />;
+}
+
+/**
+ * F6.8 — reemplazo de ``<a href={getArtifactUrl(uri)}>``.
+ *
+ * Como la URL S3 se resuelve de forma asíncrona, el link se vuelve un
+ * ``<button>`` que, al hacer click, obtiene la presigned URL y abre
+ * una pestaña nueva. Preserva el comportamiento visual del enlace.
+ */
+function OpenArtifactLink({ uri, label = 'Open', className }: { uri: string; label?: string; className?: string }) {
+  const [pending, setPending] = useState(false);
+  const onClick = useCallback(async () => {
+    setPending(true);
+    try {
+      const url = await getArtifactS3Url(uri);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setPending(false);
+    }
+  }, [uri]);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      className={className ?? 'text-blue-600 hover:underline disabled:opacity-50'}
+    >
+      {pending ? 'Opening…' : label}
+    </button>
+  );
 }
 
 const CHOQUET_STYLE_GENES: readonly string[] = [] as const;
@@ -808,7 +848,7 @@ export default function ShapPanel({ resultBundleId }: Props) {
                   <td className="border px-2 py-1.5 font-mono">{a.gene || '-'}</td>
                   <td className="border px-2 py-1.5 text-blue-600 truncate max-w-xs" title={a.uri}>{a.uri}</td>
                   <td className="border px-2 py-1.5">
-                    <a href={getArtifactUrl(a.uri)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Open</a>
+                    <OpenArtifactLink uri={a.uri} />
                   </td>
                 </tr>
               ))}

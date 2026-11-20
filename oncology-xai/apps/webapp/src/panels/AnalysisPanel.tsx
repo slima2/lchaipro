@@ -9,7 +9,7 @@ import {
   getLatestResults,
   getResultBundle,
   getArtifacts,
-  getArtifactUrl,
+  getArtifactS3Url,
   getGeneAssociations,
   createPatient,
   createCase,
@@ -18,6 +18,7 @@ import {
 } from '../api';
 import { clinicalAssocForGene } from '../data/geneClinicalAssociations';
 import { useAuth } from '../auth/AuthProvider';
+import { useArtifactS3Url, useArtifactsS3Urls } from '../hooks/useArtifactS3Url';
 import {
   classifyInteraction,
   classifyShapleyProfile,
@@ -176,9 +177,10 @@ function buildNumberedRefs(citations: { pattern: string; pmid: string }[]): { re
 
 function ArtifactImage({ uri, alt, className }: { uri: string; alt: string; className?: string }) {
   const [error, setError] = useState(false);
-  const imgUrl = getArtifactUrl(uri);
+  // F6.8 — URL S3 presignada (sin JWT en query)
+  const { url: imgUrl, loading, error: fetchError } = useArtifactS3Url(uri);
 
-  if (error) {
+  if (error || fetchError) {
     return (
       <div className={`flex items-center justify-center bg-gray-50 text-gray-400 text-xs ${className || ''}`}>
         <div className="text-center">
@@ -188,6 +190,14 @@ function ArtifactImage({ uri, alt, className }: { uri: string; alt: string; clas
           </svg>
           <p>Image not available</p>
         </div>
+      </div>
+    );
+  }
+
+  if (loading || !imgUrl) {
+    return (
+      <div className={`flex items-center justify-center bg-gray-50 ${className || ''}`}>
+        <div className="animate-pulse text-gray-300 text-xs">Loading…</div>
       </div>
     );
   }
@@ -225,17 +235,29 @@ function InteractiveOverlayImage({
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [thumbLoaded, setThumbLoaded] = useState(false);
-  const imgUrl = getArtifactUrl(imageUri);
-  const thumbUrl = thumbnailUri ? getArtifactUrl(thumbnailUri) : null;
+  // F6.8 — presigned URLs S3 (sin JWT en query)
+  const { urls } = useArtifactsS3Urls({
+    img: imageUri,
+    thumb: thumbnailUri ?? null,
+  });
+  const imgUrl = urls.img;
+  const thumbUrl = urls.thumb;
 
   useEffect(() => {
-    if (regionMapUri) {
-      const url = getArtifactUrl(regionMapUri);
-      fetch(url)
-        .then((r) => r.json())
-        .then((data) => setRegionMap(data))
-        .catch(() => setRegionMap(null));
-    }
+    if (!regionMapUri) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = await getArtifactS3Url(regionMapUri);
+        const data = await fetch(url).then((r) => r.json());
+        if (!cancelled) setRegionMap(data);
+      } catch {
+        if (!cancelled) setRegionMap(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [regionMapUri]);
 
   useEffect(() => { setThumbLoaded(false); }, [thumbUrl]);
@@ -373,7 +395,7 @@ function InteractiveOverlayImage({
     <>
       <img
         ref={imgRef}
-        src={imgUrl}
+        src={imgUrl ?? undefined}
         alt={mode === 'pattern' ? 'Pattern overlay' : 'ABMIL attention'}
         className={`${className || ''} cursor-crosshair`}
         onError={() => setImgError(true)}

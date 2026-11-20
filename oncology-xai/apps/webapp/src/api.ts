@@ -201,14 +201,9 @@ export const getArtifactUrl = (uri: string) => {
  * ``<img src>``: lo que viaja por la barra del navegador es la firma
  * HMAC de S3, no el JWT del usuario.
  *
- * Uso:
- * ```tsx
- * const [url, setUrl] = useState<string | null>(null);
- * useEffect(() => {
- *   getArtifactS3Url(uri).then(setUrl);
- * }, [uri]);
- * return url ? <img src={url} /> : <Spinner />;
- * ```
+ * Para componentes React usar el hook ``useArtifactS3Url`` de abajo;
+ * esta función raw se deja para código no-React (loaders fuera del
+ * árbol, pruebas, etc.).
  */
 export const getArtifactS3Url = async (uri: string): Promise<string> => {
   const key = uri.replace(/^s3:\/\/[^/]+\//, '');
