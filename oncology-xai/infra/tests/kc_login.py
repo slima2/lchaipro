@@ -21,8 +21,10 @@ def login(
     pwd: str,
     realm: str = "oncology",
     client: str = "oncology-webapp",
+    kc_base: str | None = None,
 ) -> str:
-    """Devuelve el access token de un usuario siguiendo el flujo del navegador."""
+    """Devuelve el access token de un usuario siguiendo el flujo del navegador.
+    kc_base: URL de Keycloak si no está en el mismo dominio que lchai (keycloak.external)."""
     redirect = base + "/"
     verifier = secrets.token_urlsafe(48)
     challenge = (
@@ -32,7 +34,7 @@ def login(
     )
 
     s = requests.Session()
-    auth = f"{base}/realms/{realm}/protocol/openid-connect"
+    auth = f"{kc_base or base}/realms/{realm}/protocol/openid-connect"
     r = s.get(
         f"{auth}/auth",
         params={
@@ -47,6 +49,11 @@ def login(
         timeout=TIMEOUT,
     )
     r.raise_for_status()
+    if auth.startswith("http://"):
+        # Keycloak 26 marca sus cookies como Secure. El navegador las envía igual a http://*.localhost
+        # (contexto seguro), pero requests no: solo para pruebas locales sin TLS se quita la marca.
+        for c in s.cookies:
+            c.secure = False
     m = re.search(r'action="([^"]+)"', r.text)
     if not m:
         raise RuntimeError(f"sin formulario de login: {r.status_code} {r.text[:300]}")

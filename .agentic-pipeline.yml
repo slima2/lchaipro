@@ -1,6 +1,6 @@
 project:
   name: txt-solca-lchai
-  argocd_app: txt-lchai-preprod
+  argocd_app: txt-solca-lchai-pre
 
 registry:
   url: registry.gitlab.telconet.ec/docker/images
@@ -103,7 +103,7 @@ version_files:
 review:
   stack: >-
     LCHAI v2.0 - analisis histologico de cancer de pulmon con IA (SOLCA). Monorepo: webapp React/Vite,
-    api-gateway FastAPI (proxy con auth JWT contra Keycloak realm oncology), 8 microservicios Python
+    api-gateway FastAPI (proxy con auth JWT contra el realm txt-solca-lchai del Keycloak de test de la-alice), 8 microservicios Python
     (case, image, inference, ehr, graph, ontology-admin, audit, active-learning), RabbitMQ, Redis,
     Fuseki, PostgreSQL y S3 (SeaweedFS) dentro del cluster. Sin GPU en el cluster: el analisis lo hace un
     worker remoto en AWS (inferenceWorker.enabled=false, remoteWorker.enabled=true). Solo pre-prod,

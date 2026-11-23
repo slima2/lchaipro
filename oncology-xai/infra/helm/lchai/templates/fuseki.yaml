@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: fuseki
+  name: {{ include "lchai.wl" (dict "root" $ "name" "fuseki") }}
 spec:
   serviceName: fuseki
   replicas: 1
@@ -21,6 +21,7 @@ spec:
       initContainers:
         {{- include "lchai.fixPermsInit" (dict "image" .Values.fuseki.image "path" "/fuseki/databases" "volume" "data") | nindent 8 }}
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: fuseki
           image: {{ .Values.fuseki.image }}

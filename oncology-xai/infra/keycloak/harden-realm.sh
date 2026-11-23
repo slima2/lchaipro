@@ -24,7 +24,10 @@
 set -euo pipefail
 NS="${NS:-lchai}"
 REALM="${REALM:-oncology}"
-POD=deploy/keycloak   # un pod activo (no uno que se está apagando tras un reinicio)
+# Deployment de Keycloak por su selector (con workloadPrefix/Suffix se llama p. ej. txt-solca-lchai-keycloak-pre)
+KC_DEPLOY=$(kubectl -n "$NS" get deploy -o jsonpath='{range .items[?(@.spec.selector.matchLabels.app=="keycloak")]}{.metadata.name}{end}')
+[[ -n "$KC_DEPLOY" ]] || { echo "No hay Keycloak en el namespace $NS (¿keycloak.external?): endurecer el realm en el Keycloak externo"; exit 1; }
+POD=deploy/$KC_DEPLOY   # un pod activo (no uno que se está apagando tras un reinicio)
 PASS=$(kubectl -n "$NS" get secret lchai-secrets -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d)
 
 # ── F001: parsear flag explícito ─────────────────────────────────────
@@ -60,7 +63,8 @@ if [[ "$DEMO_ACTION" == "auto" ]]; then
   DEMO_ACTION="keep"   # dev: no tocar demos sin orden explícita
 fi
 
-kc() { kubectl -n "$NS" exec "$POD" -- /opt/keycloak/bin/kcadm.sh "$@"; }
+# --config en /tmp: el contenedor puede tener el sistema de archivos de solo lectura
+kc() { kubectl -n "$NS" exec "$POD" -- /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/kcadm.config; }
 
 kc config credentials --server http://localhost:8080 --realm master --user admin --password "$PASS" >/dev/null
 

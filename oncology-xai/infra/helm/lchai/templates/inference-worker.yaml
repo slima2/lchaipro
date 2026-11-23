@@ -38,7 +38,7 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: inference-worker
+  name: {{ include "lchai.wl" (dict "root" $ "name" "inference-worker") }}
 spec:
   replicas: 1
   {{- with .Values.inferenceWorker.updateStrategy }}
@@ -89,6 +89,7 @@ spec:
                 name: lchai-config
             - secretRef:
                 name: lchai-secrets
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: inference-worker
           image: {{ include "lchai.svcImage" (dict "root" $ "svc" "inference-service") }}
@@ -100,7 +101,17 @@ spec:
                 name: lchai-config
             - secretRef:
                 name: lchai-secrets
+          {{- /* Hilos = limits.cpu redondeado hacia arriba (admite "4" y "2500m"), minimo 1, o inferenceWorker.threads */}}
+          {{- $cpu := .Values.inferenceWorker.resources.limits.cpu | toString }}
+          {{- $cpuThreads := ternary (max 1 (div (add (atoi (trimSuffix "m" $cpu)) 999) 1000)) (max 1 (int (ceil (float64 $cpu)))) (hasSuffix "m" $cpu) }}
+          {{- $threads := .Values.inferenceWorker.threads | default $cpuThreads | toString }}
           env:
+            - name: OMP_NUM_THREADS
+              value: {{ $threads | quote }}
+            - name: MKL_NUM_THREADS
+              value: {{ $threads | quote }}
+            - name: OPENBLAS_NUM_THREADS
+              value: {{ $threads | quote }}
             - name: CTRANSPATH_CHECKPOINT
               value: "/data/models/ctranspath.pth"
             - name: FUZZYARC_CHECKPOINT

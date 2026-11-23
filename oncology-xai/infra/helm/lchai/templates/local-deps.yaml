@@ -16,7 +16,7 @@ data:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
+  name: {{ include "lchai.wl" (dict "root" $ "name" "postgres") }}
 spec:
   serviceName: postgres
   replicas: 1
@@ -37,7 +37,9 @@ spec:
       initContainers:
         - name: fix-permissions
           image: {{ $d.postgres.image }}
-          command: ["sh", "-c", "mkdir -p /var/lib/postgresql/data/pgdata && chmod a+rwx /var/lib/postgresql/data /var/lib/postgresql/data/pgdata"]
+          # NO crear pgdata aqui: si lo crea root, initdb (uid 70) no es dueno y falla en chmod 700.
+          # Solo se abre el padre para que initdb cree pgdata con su propio uid; un pgdata vacio huerfano de root se elimina.
+          command: ["sh", "-c", "chmod a+rwx /var/lib/postgresql/data; if [ -d /var/lib/postgresql/data/pgdata ] && [ ! -f /var/lib/postgresql/data/pgdata/PG_VERSION ]; then rmdir /var/lib/postgresql/data/pgdata 2>/dev/null || true; fi"]
           securityContext:
             runAsNonRoot: false
             runAsUser: 0
@@ -54,6 +56,7 @@ spec:
             - name: data
               mountPath: /var/lib/postgresql/data
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: postgres
           image: {{ $d.postgres.image }}
@@ -122,7 +125,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: redis
+  name: {{ include "lchai.wl" (dict "root" $ "name" "redis") }}
 spec:
   replicas: 1
   selector:
@@ -136,6 +139,7 @@ spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.depPodContext" (dict "gid" 1000) | nindent 6 }}
       {{- include "lchai.nodeSelector" (dict "root" $ "pool" "general") | nindent 6 }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: redis
           image: {{ $d.redis.image }}
@@ -187,7 +191,7 @@ stringData:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: s3
+  name: {{ include "lchai.wl" (dict "root" $ "name" "s3") }}
 spec:
   serviceName: s3
   replicas: 1
@@ -206,6 +210,7 @@ spec:
       initContainers:
         {{- include "lchai.fixPermsInit" (dict "image" $d.s3.image "path" "/data" "volume" "data") | nindent 8 }}
       {{- end }}
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: seaweedfs
           image: {{ $d.s3.image }}
@@ -213,8 +218,16 @@ spec:
           args:
             - server
             - -dir=/data
+            # Solo el gateway S3 (con la identidad de lchai) escucha fuera del pod. Master, volume y filer no
+            # piden credenciales: quedan en loopback. Iceberg (8181) y Lance (9101) no se usan: apagados.
+            - -ip=127.0.0.1
+            - -ip.bind=127.0.0.1
             - -s3
+            - -s3.ip.bind=0.0.0.0
             - -s3.port=8333
+            - -s3.port.iceberg=0
+            - -s3.port.lance=0
+            - -master.telemetry=false
             - -s3.config=/etc/seaweedfs/s3.json
             - -master.volumeSizeLimitMB=1024
             # Máximo de volúmenes lógicos (crecen según se usan); con el valor automático se agotaban
@@ -238,8 +251,7 @@ spec:
             - name: tmp
               mountPath: /tmp
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits: { cpu: "1", memory: 1Gi }
+            {{- toYaml $d.s3.resources | nindent 12 }}
       volumes:
         - name: config
           secret:
@@ -281,7 +293,9 @@ kind: Job
 metadata:
   # Recurso normal (no hook): el worker de inferencia necesita los buckets para arrancar, y un hook
   # post-install esperaría a que el worker esté listo (bloqueo mutuo con --wait).
-  name: s3-buckets-{{ .Release.Revision }}
+  # El sufijo es un hash de lo que define el Job (origen CORS, buckets, imagen). No usar .Release.Revision:
+  # bajo ArgoCD vale siempre 1 y un cambio de template falla con "spec.template: field is immutable".
+  name: {{ include "lchai.wl" (dict "root" $ "name" "s3-buckets") }}-{{ printf "%s|%s|%s|%s|%s" (.Values.publicUrl | default (printf "https://%s" .Values.domain)) .Values.s3.bucket .Values.s3.modelsBucket $d.s3.awsCliImage (.Values.s3.region | toString) | sha256sum | trunc 8 }}
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 30
@@ -293,6 +307,7 @@ spec:
       {{- with include "lchai.podHardening" $ }}{{ . | nindent 6 }}{{- end }}
       {{- include "lchai.depPodContext" (dict "gid" 1000) | nindent 6 }}
       restartPolicy: OnFailure
+      {{- include "lchai.imagePullSecrets" $ | nindent 6 }}
       containers:
         - name: aws
           image: {{ $d.s3.awsCliImage }}

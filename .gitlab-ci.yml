@@ -39,6 +39,46 @@ variables:
   # Forzar generación del security-pipeline completo en cada MR push
   FORCE_SECURITY_CHECKS: "true"
 
+# Override: separar el runner de seguridad (shared, default) del runner de
+# build (cluster propio). El componente agentic-pipeline solo expone
+# RUNNER_TAG_1/2 como variable GLOBAL aplicada por igual a todo lo generado
+# (security-pipeline.yml y build-pipeline.yml se generan dentro del job
+# "analyze" con las mismas env vars), así que no hay forma de separarlos vía
+# inputs del componente. Se re-exportan las variables entre gen-security y
+# gen-build (mismo patrón que general-services/stt-service y ocr-api-services):
+#   - security-pipeline.yml (sec:sonarqube, sec:sca, etc.) -> se queda en
+#     telconet-shared-docker-1/2 (default): el runner del cluster no alcanza
+#     SonarQube (172.24.15.x no es alcanzable desde la subred del cluster).
+#   - build-pipeline.yml (build-push:*, sec:image-scan:*, sec:sbom) ->
+#     procesos-cpu-runner: el runner compartido bloquea el push de imágenes
+#     >3GB (authz plugin dso-size-guard); la de inference-service pesa ~8GB
+#     (pesos de modelos). El runner del cluster usa executor Kubernetes con
+#     Docker-in-Docker efímero (dockerd nuevo por job), sin ese plugin.
+# NOTA: este override reemplaza el "script:" del job "analyze" del componente
+# v1 (engine v1.44.0). Si el componente cambia esos pasos internos, hay que
+# actualizar este bloque a mano.
+analyze:
+  script:
+    - agentic-engine version-bump
+    - set -a && . ./release.env && set +a
+    - export RUNNER_TAG_1="telconet-shared-docker-1"
+    - export RUNNER_TAG_2="telconet-shared-docker-2"
+    - agentic-engine gen-security
+    - export RUNNER_TAG_1="procesos-cpu-runner"
+    - export RUNNER_TAG_2="procesos-cpu-runner"
+    - agentic-engine gen-build
+    # build-push:* se queda en procesos-cpu-runner (dso-size-guard de los shared
+    # bloquea push >3GB). Pero sec:image-scan:* y sec:sbom:* usan trivy
+    # --skip-db-update --cache-dir /data/scan-data/db/trivy (--image-src remote,
+    # sin daemon docker): esa DB solo existe en los shared runners, en
+    # procesos-cpu-runner falla con "--skip-db-update cannot be specified on the
+    # first run". Reescribimos solo los tags de esos jobs.
+    - |
+      awk '
+        /^[^ #].*:[ ]*$/ { shared = ($0 ~ /^sec:(image-scan|sbom):/); n = 0 }
+        shared && /^        - procesos-cpu-runner[ ]*$/ { n++; print "        - telconet-shared-docker-" n; next }
+        { print }
+      ' build-pipeline.yml > build-pipeline.yml.tmp && mv build-pipeline.yml.tmp build-pipeline.yml
 # Override: allow_failure en dev porque las imágenes no existen hasta el primer
 # build en master (CHART-3 corre antes de build-trigger en el grafo del template).
 # El endurecimiento real ocurre en la rama promote/preprod-* vía
@@ -123,6 +163,49 @@ notify:
       when: never
     - when: always
 
+# ── harbor-push: copia las imágenes recién construidas (GitLab registry) a Harbor ─
+# Pre-prod/prod corren artefactos verificados desde Harbor. Corre en el stage release,
+# o sea, después de build-trigger (build-push + sec:image-scan + sec:sbom en verde).
+# `buildx imagetools create` copia registry -> registry (manifest + capas) sin daemon
+# docker ni pull local: no le aplica el límite de 3GB del dso-size-guard y no hay que
+# bajar los ~8GB de inference-service. La imagen queda también en GitLab (failover).
+harbor-push:
+  stage: release
+  tags:
+    - procesos-cpu-runner
+  image: registry.gitlab.telconet.ec/docker/images/docker:27
+  needs:
+    - job: analyze
+      artifacts: true
+    - job: release
+  variables:
+    HARBOR_REGISTRY: harbor-llm.ai-dev.i.telconet.net
+    HARBOR_PROJECT: txt-solca
+    SRC_PREFIX: registry.gitlab.telconet.ec/docker/images/txt-solca-lchai
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+  script:
+    - |
+      if [ "$HAS_CHANGED_COMPONENTS" != "true" ] || [ -z "$NEW_VERSION_IMAGE" ] || [ "$NEW_VERSION_IMAGE" = "0.0.0" ]; then
+        echo "Sin release - nada que copiar a Harbor."; exit 0
+      fi
+      echo "$GITLAB_PUSH_TOKEN" | docker login registry.gitlab.telconet.ec -u gborbor --password-stdin
+      echo "$HARBOR_PASS" | docker login "$HARBOR_REGISTRY" -u "$HARBOR_USER" --password-stdin
+      for SVC in api-gateway case-service image-service inference-service ehr-service graph-service ontology-admin-service audit-service active-learning-service webapp; do
+        FLAG="CHANGED_$(echo "$SVC" | tr 'a-z-' 'A-Z_')"
+        eval "CHANGED=\${$FLAG:-false}"
+        [ "$CHANGED" = "true" ] || { echo "· $SVC sin cambios, se omite"; continue; }
+        SRC="${SRC_PREFIX}-${SVC}:${NEW_VERSION_IMAGE}"
+        DST="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/lchai-${SVC}:${NEW_VERSION_IMAGE}"
+        echo "→ $SRC  =>  $DST"
+        docker buildx imagetools create --tag "$DST" "$SRC"
+        docker buildx imagetools inspect "$DST" > /dev/null
+        echo "✔ $SVC en Harbor"
+      done
+
 # ── helm-push: empaqueta y sube el chart OCI al GitLab registry ──────────────
 helm-push:
   stage: release
@@ -135,6 +218,7 @@ helm-push:
     - job: analyze
       artifacts: true
     - job: release
+    - job: harbor-push
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
@@ -201,6 +285,8 @@ update-fleet:
       FLEET_VALUES="stacks/txt/lchai/envs/preprod/values.yaml"
       FLEET_ENV="stacks/txt/lchai/envs/preprod/env.yaml"
       if [ "$FULL_RELEASE" = "true" ]; then
+        # Las imágenes de la app viven en Harbor (job harbor-push). Las deps/* siguen en GitLab (regcred). Un imagePullSecrets en el pod REEMPLAZA al de la ServiceAccount, por eso van los dos.
+        yq -i '.image.registry = "harbor-llm.ai-dev.i.telconet.net" | .image.prefix = "txt-solca/lchai" | .image.separator = "-" | .image.pullSecrets = ["regcred", "harbor-pull-secret"]' "$FLEET_VALUES"
         for SVC in api-gateway case-service image-service inference-service ehr-service graph-service ontology-admin-service audit-service active-learning-service webapp; do
           FLAG="CHANGED_$(echo "$SVC" | tr 'a-z-' 'A-Z_')"
           if [ "$(eval echo \$$FLAG)" = "true" ]; then

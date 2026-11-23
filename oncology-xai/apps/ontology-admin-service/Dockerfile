@@ -20,6 +20,15 @@ COPY apps/ontology-admin-service/alembic/ alembic/
 RUN pip install --no-cache-dir -e . \
  && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 ENV HOME=/tmp
+# pip fuera de la imagen runtime: su SBOM vendorizado (_vendor/bom.cdx.json) es la fuente de
+# los hallazgos msgpack/urllib3/setuptools que reporta sec:image-scan (dependencias internas de pip,
+# no de la app). Ningun servicio necesita pip en runtime.
+# Ademas: owlready2 empaqueta los razonadores Java pellet/hermit con jars vulnerables
+# (jena-core 2.10.0, CVE-2021-39239); la app no usa razonadores (solo carga OWL), se eliminan.
+RUN pip uninstall -y pip && \
+    rm -rf /usr/local/lib/python3.12/site-packages/owlready2/pellet \
+           /usr/local/lib/python3.12/site-packages/owlready2/hermit
+LABEL ec.telconet.stack="txt-solca-lchai"
 USER 10001
 
 EXPOSE 8006
