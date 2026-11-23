@@ -9,11 +9,54 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+
+
+# ── Identity helpers (F6.6) ─────────────────────────────────────────────
+
+
+def _actor(request: Request) -> str:
+    return request.headers.get("x-user-id", "unknown")
+
+
+def _roles(request: Request) -> set[str]:
+    raw = request.headers.get("x-roles", "")
+    return {r.strip() for r in raw.split(",") if r.strip()}
+
+
+def _require_admin(request: Request) -> str:
+    """Defensa en profundidad: el gateway ya pide ``admin`` para todo
+    ``/admin/*``, pero el servicio también lo verifica para que un pod
+    lateral comprometido no pueda saltárselo con ``X-Roles`` falso.
+    """
+    if "admin" not in _roles(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return _actor(request)
+
+
+def _require_deep_search_enabled() -> None:
+    """F6.6 — el feature flag ``ontology_deep_search_enabled`` tiene que
+    bloquear **tanto** el pipeline single (:func:`run_deep_search`) como
+    el batch (:func:`start_batch_deep_search`). Antes el flag existía
+    pero nadie lo chequeaba y el batch seguía andando.
+    """
+    if not settings.ontology_deep_search_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "DeepSearch pipeline is disabled. Set "
+                "ontology_deep_search_enabled=true to enable."
+            ),
+        )
+
+
 from app.database import async_session, get_db
 from app.deep_search import (
     deduplicate,
@@ -123,13 +166,95 @@ async def approve_and_publish(
 
 
 @router.post("/ontologies/proposals/{proposal_id}:rollback")
-async def rollback_proposal(proposal_id: str, db: AsyncSession = Depends(get_db)):
+async def rollback_proposal(
+    proposal_id: str,
+    request: Request,
+    body: dict[str, Any] | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rollback **real** de una proposal.
+
+    F6.6 — antes sólo cambiaba ``status='ROLLED_BACK'`` en la proposal
+    y dejaba vivas las relaciones que la proposal había activado. Ahora:
+
+    1. Pone la proposal en ``ROLLED_BACK`` con ``rolled_back_*``.
+    2. Desactiva (``is_active=False``) todas las
+       :class:`DiscoveredRelationDB` del ``job_id`` referenciado por la
+       proposal (si lo trae en ``targets``).
+    3. Marca el ``KGSnapshotDB`` activo vigente como "invalidado por
+       rollback" en una entrada de changelog.
+
+    Requiere ``reason`` (min 8 chars) en el body para auditoría.
+    """
+    actor = _require_admin(request)
+    reason = ((body or {}).get("reason") or "").strip()
+    if len(reason) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="A 'reason' of at least 8 chars is required for rollback",
+        )
+
     p = await db.get(OntologyUpdateProposalDB, proposal_id)
     if not p:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    if p.status == "ROLLED_BACK":
+        return _proposal_dict(p)
+
+    now = datetime.now(UTC)
     p.status = "ROLLED_BACK"
+
+    # Desactivar relaciones de los job_ids referenciados por la proposal.
+    rolled_relations = 0
+    targets = p.targets or []
+    job_ids: list[str] = []
+    if isinstance(targets, list):
+        for t in targets:
+            if isinstance(t, dict) and t.get("job_id"):
+                job_ids.append(str(t["job_id"]))
+    for jid in job_ids:
+        res = await db.execute(
+            select(DiscoveredRelationDB).where(
+                DiscoveredRelationDB.job_id == jid,
+                DiscoveredRelationDB.is_active.is_(True),
+            )
+        )
+        for r in res.scalars().all():
+            r.is_active = False
+            r.rolled_back_by = actor
+            r.rolled_back_at = now
+            r.rollback_reason = reason
+            rolled_relations += 1
+
+    # Changelog estructural del snapshot más reciente (si lo hay)
+    snap_rows = await db.execute(
+        select(KGSnapshotDB).order_by(KGSnapshotDB.created_at.desc()).limit(1)
+    )
+    latest_snap = snap_rows.scalar_one_or_none()
+    if latest_snap is not None:
+        db.add(
+            KGChangelogEntryDB(
+                id=str(uuid4()),
+                snapshot_id=latest_snap.id,
+                action="REMOVED",
+                entity_type="rollback",
+                entity_id=proposal_id,
+                detail=json.dumps(
+                    {"reason": reason, "rolled_relations": rolled_relations}
+                ),
+                provenance=f"rollback by {actor}",
+            )
+        )
+
     await db.commit()
-    return _proposal_dict(p)
+    logger.info(
+        "Rollback proposal=%s by %s: %d relations deactivated",
+        proposal_id,
+        actor,
+        rolled_relations,
+    )
+    out = _proposal_dict(p)
+    out["rolled_relations"] = rolled_relations
+    return out
 
 
 def _proposal_dict(p: OntologyUpdateProposalDB) -> dict:
@@ -157,6 +282,8 @@ def _proposal_dict(p: OntologyUpdateProposalDB) -> dict:
 @router.post("/deep-search", status_code=status.HTTP_201_CREATED)
 async def run_deep_search(body: dict[str, Any], db: AsyncSession = Depends(get_db)):
     """Run DeepSearch pipeline: ingest → extract → link → dedup → validate."""
+    # F6.6 — feature flag obligatorio
+    _require_deep_search_enabled()
     text = body.get("text", "")
     source_type = body.get("source_type", "text")
     if not text:
@@ -341,7 +468,14 @@ async def start_batch_deep_search(
     """Launch batch literature search across PubMed, arXiv, Semantic Scholar.
 
     Runs in background: searches → extracts relations via LLM → links → validates → persists.
+
+    F6.6 — el feature flag ``ontology_deep_search_enabled`` también
+    bloquea esta variante batch (antes sólo se chequeaba en una futura
+    iteración que nunca llegó). Las relaciones persistidas por el
+    worker quedan ``is_active=False`` y requieren aprobación humana
+    (``:approve``) antes de aparecer en el KG.
     """
+    _require_deep_search_enabled()
     body = body or {}
     queries = body.get("queries") or DEFAULT_QUERIES
     sources = body.get("sources") or ["pubmed", "semantic_scholar", "arxiv"]
@@ -491,15 +625,35 @@ async def _run_batch_job(job_id: str, queries: list[str], sources: list[str]) ->
 @router.get("/deep-search/discovered")
 async def list_discovered_relations(
     limit: int = 50,
+    status_filter: str = "active",
     db: AsyncSession = Depends(get_db),
 ):
-    """List all discovered relations from batch searches."""
-    result = await db.execute(
-        select(DiscoveredRelationDB)
-        .where(DiscoveredRelationDB.is_active.is_(True))
-        .order_by(DiscoveredRelationDB.created_at.desc())
-        .limit(limit)
-    )
+    """List discovered relations from batch searches.
+
+    * ``status_filter=active`` (default) — solo relaciones aprobadas
+      (visibles en el KG). Coincide con el comportamiento previo.
+    * ``status_filter=pending`` — relaciones descubiertas pero aún no
+      aprobadas (lo que el admin debería revisar).
+    * ``status_filter=all`` — todas, para auditoría.
+    """
+    stmt = select(DiscoveredRelationDB)
+    if status_filter == "active":
+        stmt = stmt.where(DiscoveredRelationDB.is_active.is_(True))
+    elif status_filter == "pending":
+        stmt = stmt.where(
+            DiscoveredRelationDB.is_active.is_(False),
+            DiscoveredRelationDB.rolled_back_at.is_(None),
+        )
+    elif status_filter == "all":
+        pass
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="status_filter must be one of: active, pending, all",
+        )
+    stmt = stmt.order_by(DiscoveredRelationDB.created_at.desc()).limit(limit)
+
+    result = await db.execute(stmt)
     return [
         {
             "id": r.id,
@@ -516,7 +670,90 @@ async def list_discovered_relations(
             "paper_title": r.paper_title,
             "paper_url": r.paper_url,
             "confidence": r.confidence,
+            "is_active": r.is_active,
+            "approved_by": r.approved_by,
+            "approved_at": r.approved_at.isoformat() if r.approved_at else None,
+            "rolled_back_at": (
+                r.rolled_back_at.isoformat() if r.rolled_back_at else None
+            ),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in result.scalars().all()
     ]
+
+
+@router.post("/deep-search/discovered/{relation_id}:approve")
+async def approve_discovered_relation(
+    relation_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """F6.6 — aprobar manualmente una relación descubierta.
+
+    * Admin-only.
+    * Setea ``is_active=True`` + ``approved_by`` + ``approved_at``.
+    * Idempotente: si ya estaba aprobada → 200 con misma shape.
+    * No permite reaprobar una relación revocada por rollback (hay que
+      volver a crear el descubrimiento).
+    """
+    actor = _require_admin(request)
+    rel = await db.get(DiscoveredRelationDB, relation_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    if rel.rolled_back_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Relation was rolled back; re-run DeepSearch to rediscover "
+                "before re-approving."
+            ),
+        )
+    if not rel.is_active:
+        rel.is_active = True
+        rel.approved_by = actor
+        rel.approved_at = datetime.now(UTC)
+        await db.commit()
+        logger.info("Relation %s approved by %s", relation_id, actor)
+    return {
+        "id": rel.id,
+        "is_active": rel.is_active,
+        "approved_by": rel.approved_by,
+        "approved_at": rel.approved_at.isoformat() if rel.approved_at else None,
+    }
+
+
+@router.post("/deep-search/discovered/{relation_id}:reject")
+async def reject_discovered_relation(
+    relation_id: str,
+    request: Request,
+    body: dict[str, Any] | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """F6.6 — rechazar una relación individual.
+
+    Mismo efecto que un rollback pero scope relación única. Requiere
+    ``reason`` (min 8 chars).
+    """
+    actor = _require_admin(request)
+    reason = ((body or {}).get("reason") or "").strip()
+    if len(reason) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="A 'reason' of at least 8 chars is required to reject",
+        )
+    rel = await db.get(DiscoveredRelationDB, relation_id)
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    rel.is_active = False
+    rel.rolled_back_by = actor
+    rel.rolled_back_at = datetime.now(UTC)
+    rel.rollback_reason = reason
+    await db.commit()
+    logger.info("Relation %s rejected by %s: %s", relation_id, actor, reason)
+    return {
+        "id": rel.id,
+        "is_active": rel.is_active,
+        "rolled_back_by": rel.rolled_back_by,
+        "rolled_back_at": rel.rolled_back_at.isoformat(),
+        "rollback_reason": rel.rollback_reason,
+    }

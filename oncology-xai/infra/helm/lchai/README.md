@@ -185,7 +185,7 @@ Si `lchai-prod-models` ya no existe, los modelos están en el bucket de respaldo
 
 - **Instalación nueva** (`keycloak.importRealm: true`): el realm llega sin usuarios. Crearlos en la consola de Keycloak con los roles `clinician`, `admin` o `auditor`:
   `kubectl -n lchai port-forward svc/keycloak 8081:8080` y abrir http://localhost:8081/admin (usuario `admin`, la clave de `secrets-telconet.yaml`).
-- **Migración desde AWS** (`importRealm: false`): los usuarios vienen con el respaldo de PostgreSQL. Después de restaurar, correr `NS=lchai infra/keycloak/harden-realm.sh`.
+- **Migración desde AWS** (`importRealm: false`): los usuarios vienen con el respaldo de PostgreSQL. Después de restaurar, correr `NS=lchai KC_ENV=prod PUBLIC_URL=... infra/keycloak/harden-realm.sh --disable-demo-users` (**obligatorio en pre-prod/prod** para cerrar F001; detalles en [infra/keycloak/README.md](../../keycloak/README.md)).
 
 **Migración desde AWS:** para llevar los datos (base, usuarios y archivos), seguir [infra/migracion/README.md](../../migracion/README.md) después de este paso.
 

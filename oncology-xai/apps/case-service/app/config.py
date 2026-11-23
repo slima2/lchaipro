@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     )
     otel_exporter_otlp_endpoint: str | None = None
 
+    # F6.5 — saga de case.deleted: borrar objetos S3 del caso.
+    # Si no están configuradas, el servicio soft-deletea lo de la DB y
+    # emite ``case.delete-storage-skipped`` para que un worker lo intente
+    # luego. No bloquea la API.
+    s3_endpoint: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_bucket: str | None = None
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
 

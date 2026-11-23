@@ -1,5 +1,6 @@
 """FastAPI auth dependencies — JWT + RBAC."""
 
+import logging
 import os
 from collections.abc import Callable
 from typing import Annotated
@@ -8,6 +9,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from oncology_common.auth.jwt import JWTValidator, TokenPayload
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
@@ -21,6 +24,19 @@ _DEV_MODE = (
 # Endpoints loaded by the browser through <img src>/fetch without an Authorization header:
 # they may carry the access token in the "access_token" query parameter instead.
 _QUERY_TOKEN_PATHS = ("/artifacts/presigned",)
+
+# F6.8 (pentest 2026-11-11) — ``access_token`` en query string queda
+# **opt-in explícito por entorno**. En dev el flujo del viewer sigue
+# funcionando sin cambios, pero en pre-prod y prod el flag arranca en
+# ``false`` y el endpoint devuelve 401 cuando alguien manda el JWT por
+# la URL (Helm fuerza ``AUTH_QUERY_TOKEN_ENABLED=false`` en values de
+# staging/prod).
+#
+# El fix definitivo que recomienda el pentest es migrar el frontend a
+# ``GET /api/v1/artifacts/presigned-url?key=...`` (ver el nuevo
+# endpoint): el gateway devuelve una presigned URL S3 ya firmada,
+# **sin JWT en la query**, y el ``<img>`` carga directo desde S3.
+_QUERY_TOKEN_ENABLED = os.getenv("AUTH_QUERY_TOKEN_ENABLED", "true").lower() == "true"
 
 _DEV_USER = TokenPayload(
     sub="dev-user",
@@ -49,6 +65,30 @@ async def get_current_user(
     ):
         query_token = request.query_params.get("access_token")
         if query_token:
+            if not _QUERY_TOKEN_ENABLED:
+                # F6.8 — deshabilitado explícitamente para este entorno.
+                # No usamos el token; forzamos el 401 de abajo para que
+                # el cliente migre a /artifacts/presigned-url.
+                logger.warning(
+                    "F6.8: rejecting access_token in query on %s "
+                    "(AUTH_QUERY_TOKEN_ENABLED=false)",
+                    request.url.path,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=(
+                        "JWT in query string is disabled in this environment. "
+                        "Use GET /artifacts/presigned-url to obtain an S3 "
+                        "signed URL and load it directly."
+                    ),
+                    headers={
+                        "WWW-Authenticate": "Bearer",
+                        "Deprecation": "true",
+                        "Link": (
+                            '</api/v1/artifacts/presigned-url>; rel="successor-version"'
+                        ),
+                    },
+                )
             credentials = HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=query_token
             )

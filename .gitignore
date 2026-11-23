@@ -36,3 +36,5 @@ secrets-*.yaml
 # Worker remoto: conexiones y claves (infra/worker-remoto)
 oncology-xai/infra/worker-remoto/worker.env
 oncology-xai/infra/worker-remoto/.env
+.venv-test/
+*.egg-info/

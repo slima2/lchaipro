@@ -162,8 +162,14 @@ def create_proxy_router(settings) -> APIRouter:  # type: ignore[no-untyped-def]
         user: TokenPayload | None = getattr(request.state, "user", None)
         if user:
             headers["X-User-Id"] = user.preferred_username or user.user_id
+            # F6.2 — el servicio downstream necesita los roles para checks
+            # adicionales (p. ej. admin-only para soft-delete). El cliente no
+            # puede inyectarlos porque "x-roles" está en _CLIENT_FORBIDDEN_HEADERS.
+            if user.roles:
+                headers["X-Roles"] = ",".join(sorted(set(user.roles)))
         elif _DEV_MODE:
             headers["X-User-Id"] = "dev-user"
+            headers["X-Roles"] = "clinician,admin,auditor"
 
         body = await request.body()
         timeout = (
@@ -199,6 +205,25 @@ def create_proxy_router(settings) -> APIRouter:  # type: ignore[no-untyped-def]
         if ":process" in path or "/results/" in path:
             return settings.inference_service_url
         return settings.image_service_url
+
+    # F6.2 — DELETE de pacientes/casos es solo-admin (soft-delete con motivo+auditoría
+    # en case-service). Estas rutas deben declararse ANTES de los catch-all para que
+    # FastAPI resuelva al handler específico y no al genérico clinician+admin.
+    @router.delete(
+        "/patients/{patient_id}",
+        dependencies=[Depends(require_roles("admin"))],
+        include_in_schema=False,
+    )
+    async def _delete_patient_admin(request: Request, patient_id: str):
+        return await _proxy(request, settings.case_service_url)
+
+    @router.delete(
+        "/cases/{case_id}",
+        dependencies=[Depends(require_roles("admin"))],
+        include_in_schema=False,
+    )
+    async def _delete_case_admin(request: Request, case_id: str):
+        return await _proxy(request, settings.case_service_url)
 
     # Register /cases with dynamic upstream (must be before generic loop for /cases)
     @router.api_route(

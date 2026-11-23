@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getImages, uploadImage, processImage, getJob, getLatestResults, getArtifactUrl, createPatient, createCase, api } from '../api';
+import { getImages, uploadImage, processImage, getJob, getLatestResults, createPatient, createCase, api } from '../api';
+import { useArtifactS3Url } from '../hooks/useArtifactS3Url';
 import {
   PATTERN_COLORS,
   patternColor,
@@ -10,6 +11,19 @@ import {
 } from '../patternConstants';
 
 const GENES_V2 = ['TP53', 'EGFR', 'KRAS', 'STK11', 'KEAP1', 'RBM10'];
+
+/** F6.8 — wrapper que resuelve la presigned URL S3 antes de renderizar el <img>. */
+function S3Image({ uri, alt, className }: { uri: string; alt: string; className?: string }) {
+  const { url, loading } = useArtifactS3Url(uri);
+  if (loading || !url) {
+    return (
+      <div className={`flex items-center justify-center ${className || ''}`}>
+        <span className="text-gray-400 text-xs">Loading…</span>
+      </div>
+    );
+  }
+  return <img src={url} alt={alt} className={className} />;
+}
 
 interface Props {
   caseId: string;
@@ -48,7 +62,8 @@ export default function ImagePanel({ caseId, imageId: initialImageId, onImageSel
   }, [images.data, autoSelected, selImage, onImageSelected]);
 
   const selImageData = images.data?.find((img: any) => img.image_id === selImage);
-  const viewerUrl = selImageData?.storage_uri ? getArtifactUrl(selImageData.storage_uri) : null;
+  // F6.8 — URL S3 presignada (sin JWT en query)
+  const { url: viewerUrl } = useArtifactS3Url(selImageData?.storage_uri);
 
   const results = useQuery({
     queryKey: ['results', selImage],
@@ -447,9 +462,9 @@ export default function ImagePanel({ caseId, imageId: initialImageId, onImageSel
                 </h4>
                 <div className="border rounded bg-gray-100 h-72 flex items-center justify-center overflow-hidden">
                   {showAttnOverlay && attnArt ? (
-                    <img src={getArtifactUrl(attnArt.uri)} alt="ABMIL attention heatmap" className="max-h-full max-w-full object-contain" />
+                    <S3Image uri={attnArt.uri} alt="ABMIL attention heatmap" className="max-h-full max-w-full object-contain" />
                   ) : roiArt ? (
-                    <img src={getArtifactUrl(roiArt.uri)} alt="ROI pattern overlay" className="max-h-full max-w-full object-contain" />
+                    <S3Image uri={roiArt.uri} alt="ROI pattern overlay" className="max-h-full max-w-full object-contain" />
                   ) : (
                     <span className="text-gray-400 text-sm">Process image to see overlay</span>
                   )}

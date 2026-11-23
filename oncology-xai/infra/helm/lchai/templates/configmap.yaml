@@ -4,6 +4,10 @@ metadata:
   name: lchai-config
 data:
   ENVIRONMENT: {{ .Values.environment | quote }}
+  # F6.8 — aceptación del JWT en query string (?access_token=) solo
+  # para dev. En preprod/prod se queda en "false" y los pods devuelven
+  # 401 forzando al frontend a usar /artifacts/presigned-url.
+  AUTH_QUERY_TOKEN_ENABLED: {{ .Values.auth.allowQueryToken | default (eq (lower (.Values.environment | default "production")) "development") | quote }}
   POSTGRES_HOST: {{ .Values.postgres.host | quote }}
   POSTGRES_PORT: {{ .Values.postgres.port | quote }}
   POSTGRES_DB: {{ .Values.postgres.database | quote }}

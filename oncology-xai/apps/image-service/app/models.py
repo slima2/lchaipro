@@ -26,3 +26,11 @@ class ImageDB(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
+    # F6.5 — soft-delete propagado desde la saga de case.deleted. Permite
+    # ocultar la imagen de lecturas sin perder la trazabilidad (hash,
+    # tamaño, uploader) necesaria para auditoría.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delete_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

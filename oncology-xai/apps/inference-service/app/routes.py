@@ -3,64 +3,178 @@
 from __future__ import annotations
 
 import logging
-
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from oncology_common.authz import require_case_access
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
 from app.models import MLJobDB, ResultBundleDB, XAIArtifactDB
-from app.tasks import process_image_task
+
+# Nota: ``process_image_task`` se importa lazy (dentro de :process) para que
+# los tests y los endpoints de solo-lectura no carguen torch / openslide.
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Inference"])
 
 
+# ── Identity helpers (F6.1 / F6.5) ──────────────────────────────────────
+
+
+def _actor(request: Request) -> str:
+    return request.headers.get("x-user-id", "unknown")
+
+
+def _roles(request: Request) -> set[str]:
+    raw = request.headers.get("x-roles", "")
+    return {r.strip() for r in raw.split(",") if r.strip()}
+
+
+def _is_admin(request: Request) -> bool:
+    return "admin" in _roles(request)
+
+
+# ── Image lookup (server-side, no confiar en el body) ───────────────────
+
+
+async def _load_confirmed_image(db: AsyncSession, image_id: str) -> tuple[str, str]:
+    """Resuelve ``(case_id, storage_uri)`` desde la tabla ``images``.
+
+    Exige que la imagen exista y esté *confirmada* (``checksum`` distinto
+    del placeholder ``"pending-upload"`` que deja ``request_upload``). Así
+    cerramos el escenario del pentest §6.1: un clinician inyectaba
+    ``case_id`` ajeno en el body y procesaba una imagen con UUID
+    inventado (``00000000-0000-0000-0000-0000000000a1``) para disparar
+    la cascada destructiva al cancelar.
+    """
+    row = (
+        await db.execute(
+            text("SELECT case_id, checksum, storage_uri FROM images WHERE id = :id"),
+            {"id": image_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Image not found")
+    case_id, checksum, storage_uri = row
+    if not checksum or checksum == "pending-upload":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Image upload not confirmed yet. "
+                "Call /cases/{case_id}/images:confirm-upload first."
+            ),
+        )
+    return case_id, storage_uri
+
+
 @router.post("/images/{image_id}:process", status_code=status.HTTP_202_ACCEPTED)
 async def process_image(
     image_id: str,
+    request: Request,
     body: dict[str, Any] | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Start async inference job (DERCAS UC-IMG-02)."""
+    """Start async inference job (DERCAS UC-IMG-02).
+
+    * Resuelve ``case_id`` desde la imagen en DB — el cliente ya no puede
+      inyectarlo (pentest §6.1 / §6.4). Si el body lo trae y no coincide
+      con el real, se registra un warning y se usa el de la DB.
+    * Rechaza imágenes inexistentes o sin confirmar.
+    * Los ``thresholds`` del body se ignoran: usar siempre los presets
+      del backend (pentest §6.4 — ``pattern=0.0`` hacía todo "concluyente").
+    """
     body = body or {}
-    case_id = body.get("case_id", "unknown")
-    thresholds = body.get("thresholds")
+
+    # F6.1 — resolver case_id server-side. Si el body trae uno distinto,
+    # loguear para forense (intento de BOLA), pero seguir con el real.
+    real_case_id, _ = await _load_confirmed_image(db, image_id)
+    claimed = body.get("case_id")
+    if claimed and claimed != real_case_id:
+        logger.warning(
+            "process_image: body.case_id=%r != image.case_id=%r (user=%s)",
+            claimed,
+            real_case_id,
+            _actor(request),
+        )
+
+    # F6.5 — además de resolver, verificar que el caller tiene acceso al
+    # caso. Sin esto, cualquier clinician que conozca un image_id de otro
+    # podía dispararle jobs de inferencia.
+    await require_case_access(db, request, real_case_id)
+
+    # F6.4 — thresholds del usuario no se propagan al pipeline.
+    # El worker usa los defaults de settings. Si el body venía con
+    # ``thresholds``, se descarta silenciosamente (no romper la API
+    # pero ignorar el input).
+    if "thresholds" in body:
+        logger.info(
+            "process_image: ignoring client-supplied thresholds (user=%s)",
+            _actor(request),
+        )
 
     job_id = str(uuid4())
     job = MLJobDB(
         id=job_id,
-        case_id=case_id,
+        case_id=real_case_id,
         image_id=image_id,
         job_type="IMAGE_INFERENCE",
         status="PENDING",
+        created_by=_actor(request),
     )
     db.add(job)
     await db.commit()
 
-    # Dispatch Celery task
-    process_image_task.delay(job_id, image_id, case_id, thresholds)
+    # Dispatch Celery task — thresholds=None fuerza defaults en el worker.
+    from app.tasks import process_image_task  # lazy: evita torch en boot
+
+    process_image_task.delay(job_id, image_id, real_case_id, None)
 
     return {
         "job_id": job_id,
         "image_id": image_id,
+        "case_id": real_case_id,
         "status": "PENDING",
         "message": "Inference job queued",
     }
 
 
 @router.post("/jobs/{job_id}:cancel")
-async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    """Cancel a running job and clean up its case data."""
+async def cancel_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Cancel a running job.
+
+    * Ownership (pentest §6.1): solo el creador del job o un ``admin``
+      pueden cancelarlo. Otro clinician → 403.
+    * **Ya NO ejecuta cascada destructiva** sobre el caso. La cancelación
+      marca el job como ``CANCELLED`` y revoca la tarea Celery.
+      Para borrar un caso hay que llamar al endpoint admin-only
+      ``DELETE /cases/{id}`` (soft-delete, F6.2).
+    """
     job = await db.get(MLJobDB, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    actor = _actor(request)
+    if job.created_by and job.created_by != actor and not _is_admin(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the job creator or an admin can cancel this job",
+        )
+
+    if job.status in ("COMPLETED", "FAILED", "CANCELLED"):
+        # Idempotente para jobs ya terminados.
+        return {
+            "status": job.status.lower(),
+            "job_id": job_id,
+            "case_id": job.case_id,
+            "cleaned": False,
+        }
 
     if job.celery_task_id:
         try:
@@ -73,58 +187,32 @@ async def cancel_job(job_id: str, db: AsyncSession = Depends(get_db)):
             )  # antes se ignoraba en silencio (Bandit S110)
 
     job.status = "CANCELLED"
+    job.ended_at = datetime.now(UTC)
     await db.commit()
 
-    from sqlalchemy import text
-
-    case_id = job.case_id
-
-    await db.execute(
-        text(
-            "DELETE FROM xai_artifacts WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
+    logger.info(
+        "Cancelled job %s by %s (case_id=%s) — no cascade", job_id, actor, job.case_id
     )
-    await db.execute(
-        text(
-            "DELETE FROM genetic_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text(
-            "DELETE FROM pattern_results WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text(
-            "DELETE FROM morphologic_profiles WHERE result_bundle_id IN (SELECT id FROM result_bundles WHERE case_id = :cid)"
-        ),
-        {"cid": case_id},
-    )
-    await db.execute(
-        text("DELETE FROM result_bundles WHERE case_id = :cid"), {"cid": case_id}
-    )
-    await db.execute(text("DELETE FROM ml_jobs WHERE case_id = :cid"), {"cid": case_id})
-    await db.execute(text("DELETE FROM images WHERE case_id = :cid"), {"cid": case_id})
-    await db.execute(text("DELETE FROM cases WHERE id = :cid"), {"cid": case_id})
-    await db.commit()
-
     return {
         "status": "cancelled",
         "job_id": job_id,
-        "case_id": case_id,
-        "cleaned": True,
+        "case_id": job.case_id,
+        "cleaned": False,  # mantener la clave por compat; pero ahora SIEMPRE false
     }
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    """Poll job status."""
+async def get_job(job_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Poll job status.
+
+    F6.5 — exige que el caller tenga acceso al caso del job, no solo que
+    conozca el ``job_id``.
+    """
     job = await db.get(MLJobDB, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.case_id:
+        await require_case_access(db, request, job.case_id)
     return {
         "job_id": job.id,
         "image_id": job.image_id,
@@ -141,8 +229,18 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/images/{image_id}/results/latest")
-async def get_latest_results(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Get latest ResultBundle for an image."""
+async def get_latest_results(
+    image_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Get latest ResultBundle for an image.
+
+    F6.5 — ownership por caso de la imagen. Un clinician no puede
+    enumerar resultados de imágenes ajenas conociendo el ``image_id``.
+    """
+    # Resolver case_id desde la imagen y validar acceso
+    img_case_id, _ = await _load_confirmed_image(db, image_id)
+    await require_case_access(db, request, img_case_id)
+
     stmt = (
         select(ResultBundleDB)
         .where(ResultBundleDB.image_id == image_id)
@@ -163,7 +261,11 @@ async def get_latest_results(image_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/results/{result_bundle_id}")
-async def get_result_bundle(result_bundle_id: str, db: AsyncSession = Depends(get_db)):
+async def get_result_bundle(
+    result_bundle_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(ResultBundleDB)
         .where(ResultBundleDB.id == result_bundle_id)
@@ -178,11 +280,28 @@ async def get_result_bundle(result_bundle_id: str, db: AsyncSession = Depends(ge
     bundle = result.scalar_one_or_none()
     if not bundle:
         raise HTTPException(status_code=404, detail="Result bundle not found")
+    # F6.5 — ownership por el caso del bundle
+    await require_case_access(db, request, bundle.case_id)
     return _bundle_dict(bundle)
 
 
 @router.get("/results/{result_bundle_id}/artifacts")
-async def get_artifacts(result_bundle_id: str, db: AsyncSession = Depends(get_db)):
+async def get_artifacts(
+    result_bundle_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    # Primero resolver el case_id del bundle para el ownership check.
+    row = (
+        await db.execute(
+            text("SELECT case_id FROM result_bundles WHERE id = :rid"),
+            {"rid": result_bundle_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Result bundle not found")
+    await require_case_access(db, request, row[0])
+
     stmt = select(XAIArtifactDB).where(
         XAIArtifactDB.result_bundle_id == result_bundle_id
     )
@@ -236,50 +355,135 @@ async def get_parameters():
     }
 
 
+# F6.4 — allowlist de rangos admitidos para los parámetros del pipeline.
+#
+# Antes cualquier clinician podía llamar ``PUT /parameters`` con
+# ``mutation_threshold=0.0`` y dejar todas las predicciones futuras
+# marcadas como "concluyentes" para TODO el deployment (variable de
+# proceso, no por caso). Dos cambios:
+#
+# 1. El endpoint requiere rol ``admin`` en el servicio (ya lo pedía el
+#    gateway como clinician+admin — bajamos a admin only en runtime).
+# 2. Cada campo tiene un rango válido. Valores fuera de rango → 400.
+#    El worker (celery) no lee directamente del body; lee de
+#    ``settings.*`` / módulos globales, así que el único vector es este
+#    endpoint.
+_PARAM_RANGES: dict[str, tuple[float, float]] = {
+    "auroc_threshold": (0.5, 0.95),
+    "mutation_threshold": (0.3, 0.9),
+    "pattern_threshold": (0.3, 0.9),
+    "per_gene_auroc": (0.5, 0.99),
+    "per_gene_mutation": (0.3, 0.9),
+    # Enteros
+    "top_k_tiles": (1, 500),
+    "max_tiles": (1, 20_000),
+}
+
+_ALLOWED_METHODS: frozenset[str] = frozenset(
+    {"abmil", "choquet", "xgboost", "pattern_informed", "fuzzy_choquet"}
+)
+
+
+def _clamp_float(name: str, raw: Any) -> float:
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{name}: must be a number")
+    lo, hi = _PARAM_RANGES[name]
+    if not (lo <= val <= hi):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name}={val} out of allowed range [{lo}, {hi}]",
+        )
+    return val
+
+
+def _clamp_int(name: str, raw: Any) -> int:
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{name}: must be an integer")
+    lo, hi = _PARAM_RANGES[name]
+    if not (lo <= val <= hi):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{name}={val} out of allowed range [{int(lo)}, {int(hi)}]",
+        )
+    return val
+
+
 @router.put("/parameters")
-async def update_parameters(body: dict[str, Any]):
-    """Update system parameters at runtime."""
+async def update_parameters(request: Request, body: dict[str, Any]):
+    """Update system parameters at runtime.
+
+    F6.4 — admin-only + rangos validados. Los valores fuera del
+    allowlist se rechazan con 400 y no afectan al estado global.
+    """
+    if not _is_admin(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required to mutate pipeline parameters",
+        )
+
     import app.ml.checkpoints.loader as loader_mod
 
-    updated = []
+    updated: list[str] = []
+    actor = _actor(request)
 
     if "auroc_values" in body and isinstance(body["auroc_values"], dict):
-        for gene, val in body["auroc_values"].items():
-            if gene in loader_mod.PROPOSED_AUROC:
-                loader_mod.PROPOSED_AUROC[gene] = float(val)
-                updated.append(f"AUROC[{gene}]={val}")
+        for gene, raw in body["auroc_values"].items():
+            if gene not in loader_mod.PROPOSED_AUROC:
+                continue  # ignorar genes desconocidos
+            val = _clamp_float("per_gene_auroc", raw)
+            loader_mod.PROPOSED_AUROC[gene] = val
+            updated.append(f"AUROC[{gene}]={val}")
 
     if "auroc_threshold" in body:
-        loader_mod.AUROC_THRESHOLD = float(body["auroc_threshold"])
-        updated.append(f"threshold={body['auroc_threshold']}")
+        val = _clamp_float("auroc_threshold", body["auroc_threshold"])
+        loader_mod.AUROC_THRESHOLD = val
+        updated.append(f"threshold={val}")
 
     if "best_method" in body and isinstance(body["best_method"], dict):
         for gene, method in body["best_method"].items():
-            if gene in loader_mod.BEST_METHOD:
-                loader_mod.BEST_METHOD[gene] = str(method)
-                updated.append(f"method[{gene}]={method}")
+            if gene not in loader_mod.BEST_METHOD:
+                continue
+            method_str = str(method).lower()
+            if method_str not in _ALLOWED_METHODS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"best_method[{gene}]={method!r} not in allowed "
+                        f"set {sorted(_ALLOWED_METHODS)}"
+                    ),
+                )
+            loader_mod.BEST_METHOD[gene] = method_str
+            updated.append(f"method[{gene}]={method_str}")
 
     if "mutation_threshold" in body:
-        settings.mutation_threshold = float(body["mutation_threshold"])
-        updated.append(f"mutation_threshold={body['mutation_threshold']}")
+        val = _clamp_float("mutation_threshold", body["mutation_threshold"])
+        settings.mutation_threshold = val
+        updated.append(f"mutation_threshold={val}")
 
     if "gene_mutation_thresholds" in body and isinstance(
         body["gene_mutation_thresholds"], dict
     ):
-        for gene, val in body["gene_mutation_thresholds"].items():
-            if gene in loader_mod.GENE_MUTATION_THRESHOLD:
-                loader_mod.GENE_MUTATION_THRESHOLD[gene] = float(val)
-                updated.append(f"gene_threshold[{gene}]={val}")
+        for gene, raw in body["gene_mutation_thresholds"].items():
+            if gene not in loader_mod.GENE_MUTATION_THRESHOLD:
+                continue
+            val = _clamp_float("per_gene_mutation", raw)
+            loader_mod.GENE_MUTATION_THRESHOLD[gene] = val
+            updated.append(f"gene_threshold[{gene}]={val}")
 
     if "top_k_tiles" in body:
-        settings.v2_top_k_tiles = int(body["top_k_tiles"])
-        updated.append(f"top_k_tiles={body['top_k_tiles']}")
+        settings.v2_top_k_tiles = _clamp_int("top_k_tiles", body["top_k_tiles"])
+        updated.append(f"top_k_tiles={settings.v2_top_k_tiles}")
 
     if "max_tiles" in body:
-        settings.v2_max_tiles_wsi = int(body["max_tiles"])
-        updated.append(f"max_tiles={body['max_tiles']}")
+        settings.v2_max_tiles_wsi = _clamp_int("max_tiles", body["max_tiles"])
+        updated.append(f"max_tiles={settings.v2_max_tiles_wsi}")
 
-    return {"status": "updated", "changes": updated}
+    logger.info("Parameters updated by %s: %s", actor, updated)
+    return {"status": "updated", "changes": updated, "actor": actor}
 
 
 _DISALLOWED_PATTERN_NAMES = frozenset({"mucinous"})

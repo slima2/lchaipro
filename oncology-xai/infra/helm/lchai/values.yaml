@@ -204,6 +204,12 @@ auth:
   jwtIssuer: ""         # vacío = <publicUrl>/realms/<realm> si hay publicUrl
   jwtAudience: ""       # "oncology-api" cuando el realm tiene el mapper de audiencia
   corsOrigins: ""       # vacío = sin CORS (la webapp está en el mismo origen)
+  # F6.8 (pentest 2026-11-11) — ``?access_token=<JWT>`` en la query de
+  # ``/artifacts/presigned`` se acepta sólo cuando el frontend aún no
+  # ha migrado al endpoint ``/artifacts/presigned-url``. En producción
+  # dejarlo en ``false`` (default según ``environment``); se puede
+  # sobre-escribir aquí durante la ventana de migración.
+  allowQueryToken: null  # null = auto (true en development, false en el resto)
 
 webapp:
   cspS3Origin: ""       # vacío = se deduce de s3.endpoint (o AWS S3)

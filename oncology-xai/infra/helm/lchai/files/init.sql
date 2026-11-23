@@ -376,3 +376,111 @@ ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS choquet_shapley_values JSON
 ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS choquet_interaction_indices JSON;
 ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS ablation_data JSON;
 ALTER TABLE genetic_results ADD COLUMN IF NOT EXISTS permutation_data JSON;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Pentest 2026-11-11 — mitigaciones (F6.3, F6.5, F6.6)
+-- Todo idempotente: safe en instalación nueva y en upgrade en caliente.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ──────────────── F6.5 — soft-delete en images ──────────────────────
+ALTER TABLE images ADD COLUMN IF NOT EXISTS deleted_at    TIMESTAMPTZ;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS deleted_by    VARCHAR(255);
+ALTER TABLE images ADD COLUMN IF NOT EXISTS delete_reason VARCHAR(500);
+CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
+
+-- ──────────────── F6.3 — idempotencia y CASCADE en EHR ──────────────
+-- Paso 1: purgar duplicados preexistentes (MIN(id) por clave).
+-- Necesario antes de crear las UQ si la DB venía usándose.
+DELETE FROM ehr_entities
+ WHERE id NOT IN (
+   SELECT MIN(id) FROM ehr_entities
+   GROUP BY ehr_id, "start", "end", entity_type
+ );
+DELETE FROM ehr_mappings
+ WHERE id NOT IN (
+   SELECT MIN(id) FROM ehr_mappings
+   GROUP BY entity_id, ontology, iri
+ );
+
+-- Paso 2: UQ ``(ehr_id, start, end, entity_type)`` sobre ehr_entities.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_ehr_entity_span'
+  ) THEN
+    ALTER TABLE ehr_entities
+      ADD CONSTRAINT uq_ehr_entity_span
+      UNIQUE (ehr_id, "start", "end", entity_type);
+  END IF;
+END $$;
+
+-- Paso 3: UQ ``(entity_id, ontology, iri)`` sobre ehr_mappings.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_ehr_mapping_iri'
+  ) THEN
+    ALTER TABLE ehr_mappings
+      ADD CONSTRAINT uq_ehr_mapping_iri
+      UNIQUE (entity_id, ontology, iri);
+  END IF;
+END $$;
+
+-- Paso 4: recrear FKs con ON DELETE CASCADE. En Postgres hay que
+-- DROP + CREATE porque ALTER CONSTRAINT no permite cambiar la acción.
+DO $$
+DECLARE
+  fk_name TEXT;
+BEGIN
+  -- ehr_entities.ehr_id → ehr_documents.id
+  SELECT conname INTO fk_name
+    FROM pg_constraint
+   WHERE conrelid = 'ehr_entities'::regclass
+     AND contype = 'f'
+     AND confrelid = 'ehr_documents'::regclass
+   LIMIT 1;
+  IF fk_name IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = fk_name AND confdeltype = 'c'
+  ) THEN
+    EXECUTE format('ALTER TABLE ehr_entities DROP CONSTRAINT %I', fk_name);
+    ALTER TABLE ehr_entities
+      ADD CONSTRAINT ehr_entities_ehr_id_fkey
+      FOREIGN KEY (ehr_id) REFERENCES ehr_documents(id) ON DELETE CASCADE;
+  END IF;
+
+  -- ehr_mappings.entity_id → ehr_entities.id
+  SELECT conname INTO fk_name
+    FROM pg_constraint
+   WHERE conrelid = 'ehr_mappings'::regclass
+     AND contype = 'f'
+     AND confrelid = 'ehr_entities'::regclass
+   LIMIT 1;
+  IF fk_name IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = fk_name AND confdeltype = 'c'
+  ) THEN
+    EXECUTE format('ALTER TABLE ehr_mappings DROP CONSTRAINT %I', fk_name);
+    ALTER TABLE ehr_mappings
+      ADD CONSTRAINT ehr_mappings_entity_id_fkey
+      FOREIGN KEY (entity_id) REFERENCES ehr_entities(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- ──────────────── F6.6 — aprobación humana + rollback real ──────────
+ALTER TABLE discovered_relations ADD COLUMN IF NOT EXISTS approved_by      VARCHAR(255);
+ALTER TABLE discovered_relations ADD COLUMN IF NOT EXISTS approved_at      TIMESTAMPTZ;
+ALTER TABLE discovered_relations ADD COLUMN IF NOT EXISTS rolled_back_by   VARCHAR(255);
+ALTER TABLE discovered_relations ADD COLUMN IF NOT EXISTS rolled_back_at   TIMESTAMPTZ;
+ALTER TABLE discovered_relations ADD COLUMN IF NOT EXISTS rollback_reason  VARCHAR(500);
+
+-- is_active pasa a default=false. Para filas ya existentes: el pentest
+-- quiere que se re-aprueben todas. ``WHERE approved_by IS NULL`` evita
+-- que un ``helm upgrade`` posterior revierta las que un admin ya aprobó.
+ALTER TABLE discovered_relations ALTER COLUMN is_active SET DEFAULT false;
+UPDATE discovered_relations
+   SET is_active = false
+ WHERE is_active = true AND approved_by IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_discovered_relations_active
+  ON discovered_relations (is_active);
