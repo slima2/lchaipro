@@ -1,0 +1,19 @@
+LCHAI v2.0 — Lung Cancer Histologic Analysis with AI
+Copyright (c) 2026 Servio Fernando Lima Reina
+PhD thesis, University of Fribourg, Switzerland (2026)
+
+This work (code, documentation, thesis provenance, trained model
+weights and diagrams) is licensed under CC BY 4.0 — see LICENSE.
+
+When reusing this material, please cite:
+
+  @phdthesis{lima2026fuzzy,
+    author  = {Lima Reina, Servio Fernando},
+    title   = {Fuzzy Margin Representation Learning for Explainable
+               Architecture--Genotype Associations in Lung Adenocarcinoma},
+    school  = {University of Fribourg},
+    year    = {2026},
+    address = {Fribourg, Switzerland}
+  }
+
+SPDX-License-Identifier: CC-BY-4.0
